@@ -35,15 +35,16 @@ int openTCP()
 
     fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd == -1) /*error*/
-        exit(1);
+        exit(2);
 
     n = bind(fd, res->ai_addr, res->ai_addrlen);
     if (n == -1) /*error*/
-        exit(1);
+        exit(3);
 
     if (listen(fd, 5) == -1) /*error*/
-        exit(1);
+        exit(4);
 
+    puts("openTCP");
     return fd;
 }
 
@@ -82,7 +83,7 @@ int openUDP()
     // if (n == -1) /*error*/
     //     exit(1);
     // ############# </Communications> #############
-
+    puts("openUDP");
     return fd;
 }
 
@@ -90,7 +91,9 @@ int main()
 {
     //int tcp = openTCP();
     int udp = openUDP();
+    int tcp = openTCP();
     int newfd;
+    fd_set rfds;
     struct sigaction act;
 
     memset(&act, 0, sizeof act);
@@ -99,27 +102,46 @@ int main()
     if (sigaction(SIGPIPE, &act, NULL) == -1)/*error*/
         exit(1);
 
-    addrlen = sizeof(addr);
-    n = recvfrom(udp, buffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
-    if (n == -1) /*error*/
-        exit(1);
+    while (1) {
+        FD_ZERO(&rfds);
+        FD_SET(udp, &rfds);
+        FD_SET(tcp, &rfds);
 
-    write(1, "received: ", 10);
-    write(1, buffer, n);
-    n = sendto(udp, buffer, n, 0, (struct sockaddr *)&addr, addrlen);
-    if (n == -1) /*error*/
-        exit(1);
+        n = select(FD_SETSIZE, &rfds, NULL, NULL, NULL);
+        if (n <= 0) /*error*/
+            exit(1);
 
-    // if ((newfd = accept(tcp, (struct sockaddr *)&addr, &addrlen)) == -1) /*error*/
-    //     exit(1);
+        if (FD_ISSET(udp, &rfds)) {
+            addrlen = sizeof(addr);
+            n = recvfrom(udp, buffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
+            if (n == -1) /*error*/
+                exit(1);
 
-    // write(1, "received", 8);
-    // n = write(newfd, "hey", 3);
-    // if (n == -1)/*error*/
-    //     exit(1);
+            write(1, "received: ", 10);
+            write(1, buffer, n);
+            n = sendto(udp, buffer, n, 0, (struct sockaddr *)&addr, addrlen);
+            if (n == -1) /*error*/
+                exit(1);
+            break;
+        }
+
+        if (FD_ISSET(tcp, &rfds)) {
+            if ((newfd = accept(tcp, (struct sockaddr *)&addr, &addrlen)) == -1) /*error*/
+                exit(1);
+
+            write(1, "received", 8);
+            n = write(newfd, "hey", 3);
+            if (n == -1)/*error*/
+                exit(1);
+            break;
+        }
+    }
 
     freeaddrinfo(res);
     close(newfd);
     close(udp);
+    FD_CLR(udp, &rfds);
+    close(tcp);
+    FD_CLR(tcp, &rfds);
     return 0;
 }
