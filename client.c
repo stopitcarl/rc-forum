@@ -14,11 +14,9 @@
  * VARIAVEIS GLOBAIS
  * ***********************/
 
-char FSIP[10];
+char FShost[50];
 char FSport[10];
 
-int fd;
-ssize_t n;
 socklen_t addrlen;
 struct addrinfo hints, *res;
 struct sockaddr_in addr;
@@ -27,8 +25,8 @@ struct sockaddr_in addr;
  * DECLARACOES
  * ***********************/
 
-int creatUDPclient();
-int creatUTCclient();
+int openUDP();
+int openTCP();
 void parseArgs(int argc, char *argv[]);
 
 /*************************
@@ -37,16 +35,34 @@ void parseArgs(int argc, char *argv[]);
 
 int main(int argc, char *argv[]) {   
 
+    char hostName[100];
+    int UDPfd;
+    int TCPfd;
+
     memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_INET;       
-    hints.ai_socktype = SOCK_STREAM; 
-    hints.ai_flags = AI_PASSIVE | AI_NUMERICSERV;
+    hints.ai_family = AF_INET; 
+    hints.ai_flags = AI_NUMERICSERV;    
+
+    /* Initializes default variables */
+    strcpy(FSport, "58002");
+    if(gethostname(hostName, 100)) {
+        perror("ERROR: gethostname\n");
+        exit(EXIT_FAILURE);
+    }
+    strcpy(FShost, hostName);
 
     /* Parses Args */
-    strcmp(FSport, "58002");
-    strcmp()
-    
     parseArgs(argc, argv);
+
+    printf("%s\n", FShost);
+    printf("%s\n", FSport);
+
+    UDPfd = openUDP();
+    TCPfd = openTCP();
+
+    freeaddrinfo(res);
+    close(TCPfd);
+    close(UDPfd);
 
     return 0;
 }
@@ -55,25 +71,61 @@ void parseArgs(int argc, char *argv[]) {
 
     int opt;
 
-    while ((opt = getopt(argc, argv, "a:b:")) != -1) {
+    while ((opt = getopt(argc, argv, "n:p:")) != -1) {
         switch (opt) {
             case 'n':
-                if (!strcmp(optarg, "")) {
-                    printf("missing argument");
-                    exit(1);
-                }
-                strcpy(FSIP, optarg);
+                strcpy(FShost, optarg);
+                hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV;
+                printf("Current IP:%s\n", optarg);
                 break;
             case 'p':
-                if (!strcmp(optarg, "")) {
-                    printf("missing argument");
-                    exit(1);
-                }
                 strcpy(FSport, optarg);
+                printf("Current port:%s\n", optarg);
                 break;
-            default:
-                printf("unkown option\n");
-                exit(1);
         }
     }
+}
+
+int openUDP() {
+
+    int fd;
+
+    hints.ai_socktype = SOCK_DGRAM;
+
+    if (getaddrinfo(FShost, FSport, &hints, &res)) {
+        perror("ERROR: getaddrinfo UDP\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if ((fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1) {
+        perror("ERROR: socket\n");
+        exit(EXIT_FAILURE);
+    }
+
+    return fd;
+}
+
+int openTCP() {
+
+    int fd;
+
+    hints.ai_socktype = SOCK_STREAM;
+
+    if (getaddrinfo(FShost, FSport, &hints, &res)) {
+        perror("ERROR: getaddrinfo TCP\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if ((fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1) {
+        perror("ERROR: socket\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    /*
+    if (connect(fd, res->ai_addr, res->ai_addrlen) == -1) {
+        perror("ERROR: connect\n");
+        exit(EXIT_FAILURE);
+    }*/
+
+    return fd;
 }
