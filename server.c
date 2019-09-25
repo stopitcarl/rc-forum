@@ -13,8 +13,10 @@
 #define PORT "58000"
 #define BUFFER_SIZE 128
 #define MAXNAME 80
+#define GOOD EXIT_SUCCESS
+#define BAD EXIT_FAILURE
 
-int fd, n;
+int n;
 socklen_t addrlen;
 struct addrinfo hints, *res;
 struct sockaddr_in addr;
@@ -31,7 +33,7 @@ int openTCP()
 
     n = getaddrinfo(NULL, PORT, &hints, &res);
     if (n != 0) /*error*/
-        exit(1);
+        exit(BAD);
 
     fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd == -1) /*error*/
@@ -44,7 +46,7 @@ int openTCP()
     if (listen(fd, 5) == -1) /*error*/
         exit(4);
 
-    puts("openTCP");
+    puts("opened TCP");
     return fd;
 }
 
@@ -59,37 +61,36 @@ int openUDP()
     // Get hostname
     n = getaddrinfo(NULL, PORT, &hints, &res);
     if (n != 0) /*error*/
-        exit(1);
+        exit(BAD);
 
     // Open socket to filee-descriptor fd
     int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if (fd == -1) /*error*/
-        exit(1);
+        exit(BAD);
 
     // Open socket to file-descriptor fd
     n = bind(fd, res->ai_addr, res->ai_addrlen);
     if (n == -1) /*error*/
-        exit(1);
+        exit(BAD);
 
     // ############# <Communications> #############
     // addrlen = sizeof(addr);
     // n = recvfrom(fd, buffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
     // if (n == -1) /*error*/
-    //     exit(1);
+    //     exit(BAD);
 
     // write(1, "received: ", 10);
     // write(1, buffer, n);
     // n = sendto(fd, buffer, n, 0, (struct sockaddr *)&addr, addrlen);
     // if (n == -1) /*error*/
-    //     exit(1);
+    //     exit(BAD);
     // ############# </Communications> #############
-    puts("openUDP");
+    puts("opened UDP");
     return fd;
 }
 
 int main()
 {
-    //int tcp = openTCP();
     int udp = openUDP();
     int tcp = openTCP();
     int newfd;
@@ -99,44 +100,56 @@ int main()
     memset(&act, 0, sizeof act);
     act.sa_handler = SIG_IGN;
 
-    if (sigaction(SIGPIPE, &act, NULL) == -1)/*error*/
-        exit(1);
+    if (sigaction(SIGPIPE, &act, NULL) == -1) /*error*/
+        exit(BAD);
 
-    while (1) {
+    while (1)
+    {
         FD_ZERO(&rfds);
         FD_SET(udp, &rfds);
         FD_SET(tcp, &rfds);
 
         n = select(FD_SETSIZE, &rfds, NULL, NULL, NULL);
         if (n <= 0) /*error*/
-            exit(1);
+            exit(BAD);
 
-        if (FD_ISSET(udp, &rfds)) {
+        if (FD_ISSET(udp, &rfds))
+        {
             addrlen = sizeof(addr);
-            n = recvfrom(udp, buffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
+            n = recvfrom(udp, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&addr, &addrlen);
             if (n == -1) /*error*/
-                exit(1);
+                exit(BAD);
 
-            write(1, "received: ", 10);
+            write(1, "udp received: ", 14);
             write(1, buffer, n);
             n = sendto(udp, buffer, n, 0, (struct sockaddr *)&addr, addrlen);
             if (n == -1) /*error*/
-                exit(1);
-            break;
+                exit(BAD);
+            //break;
         }
 
-        if (FD_ISSET(tcp, &rfds)) {
+        if (FD_ISSET(tcp, &rfds))
+        {
+            // Accept connection: TCP handshake
             if ((newfd = accept(tcp, (struct sockaddr *)&addr, &addrlen)) == -1) /*error*/
-                exit(1);
+                exit(BAD);
 
-            write(1, "received", 8);
-            n = write(newfd, "hey", 3);
-            if (n == -1)/*error*/
-                exit(1);
-            break;
+            // Read message
+            n = read(newfd, buffer, BUFFER_SIZE);
+            if (n == -1) /*error*/
+                exit(BAD);
+            
+            
+            write(1, "tcp received: ", 14);
+            write(1, buffer, n);            
+            n = write(newfd, buffer, n);
+            if (n == -1) /*error*/
+                exit(BAD);
+            //break;
         }
     }
 
+    puts("closing server, byeeee\n");
     freeaddrinfo(res);
     close(newfd);
     close(udp);
