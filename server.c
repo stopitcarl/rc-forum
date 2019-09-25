@@ -91,13 +91,13 @@ int openUDP() {
     // addrlen = sizeof(addr);
     // n = recvfrom(fd, buffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
     // if (n == -1) /*error*/
-    //     exit(1);
+    //     exit(BAD);
 
     // write(1, "received: ", 10);
     // write(1, buffer, n);
     // n = sendto(fd, buffer, n, 0, (struct sockaddr *)&addr, addrlen);
     // if (n == -1) /*error*/
-    //     exit(1);
+    //     exit(BAD);
     // ############# </Communications> #############
     return fd;
 }
@@ -120,7 +120,8 @@ int main() {
     if (sigaction(SIGINT, &intr, NULL) == -1)
         error("Error on sigacton");
 
-    while (1) {
+    while (1)
+    {
         FD_ZERO(&rfds);
         FD_SET(udp, &rfds);
         FD_SET(tcp, &rfds);
@@ -136,7 +137,7 @@ int main() {
             if (n == -1)
                 error("Error receiving from udp socket");
 
-            write(1, "received: ", 10);
+            write(1, "udp received: ", 14);
             write(1, buffer, n);
             n = sendto(udp, buffer, n, 0, (struct sockaddr *)&addr, addrlen);
             if (n == -1)
@@ -155,6 +156,7 @@ int main() {
         }
     }
 
+    puts("closing server, byeeee\n");
     freeaddrinfo(res);
     close(newfd);
     FD_CLR(udp, &rfds);
