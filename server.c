@@ -149,8 +149,15 @@ int main() {
             if ((newfd = accept(tcp, (struct sockaddr *)&addr, &addrlen)) == -1)
                 error("Error accepting tcp connection");
 
-            write(1, "received", 8);
-            n = write(newfd, "hey", 3);
+            //Read message
+            n = read(newfd, buffer, BUFFER_SIZE);
+            if (n == -1)
+                error("Error reading from tcp socket");
+
+
+            write(1, "tcp received", 14);
+            write(1, buffer, n);
+            n = write(newfd, buffer, n);
             if (n == -1)
                 error("Error writing to tcp socket");
         }
