@@ -21,6 +21,10 @@ socklen_t addrlen;
 struct addrinfo hints, *res;
 struct sockaddr_in addr;
 
+char userID[10];
+char selectedTopic[10];
+char selectedQuestion[10];
+
 /*************************
  * DECLARACOES
  * ***********************/
@@ -28,6 +32,17 @@ struct sockaddr_in addr;
 int openUDP();
 int openTCP();
 void parseArgs(int argc, char *argv[]);
+void registerCommand(char *command);
+void topicListCommand();
+void topicSelectCommand(char *command);
+void topicProposeCommand(char *command);
+void questionListCommand();
+void questionGetCommand(char *command);
+void questionSubmitCommand(char *command);
+void answearSubmitCommand(char *command);
+void sendMessageUDP(char *message);
+void sendMessageTCP(char *message);
+
 
 /*************************
  * CODIGO
@@ -35,7 +50,8 @@ void parseArgs(int argc, char *argv[]);
 
 int main(int argc, char *argv[]) {   
 
-    char hostName[100];
+    char hostName[100], command[256];
+    char *buffer;
     int UDPfd;
     int TCPfd;
 
@@ -60,6 +76,46 @@ int main(int argc, char *argv[]) {
     UDPfd = openUDP();
     TCPfd = openTCP();
 
+    /* Main cycle */
+    fgets(command, sizeof(command), stdin);
+    while (strcmp(command, "exit\n")) {
+
+        /* Gets command name */
+        buffer = strtok(command, " ");
+
+        /* Checks for command type */
+        if (!strcmp(buffer, "register") || !strcmp(buffer, "reg")) {
+            registerCommand(command);
+        }
+        else if (!strcmp(buffer, "topic_list\n") || !strcmp(buffer, "tl\n")) {
+            topicListCommand();
+        }
+        else if (!strcmp(buffer, "topic_select") || !strcmp(buffer, "ts")) {
+            topicSelectCommand(command);
+        }
+        else if (!strcmp(buffer, "topic_propose") || !strcmp(buffer, "tp")) {
+            topicProposeCommand(command);
+        }
+        else if (!strcmp(buffer, "question_list\n") || !strcmp(buffer, "ql\n")) {
+            questionListCommand();
+        }
+        else if (!strcmp(buffer, "question_get") || !strcmp(buffer, "qg")) {
+            questionGetCommand(command);
+        }
+        else if (!strcmp(buffer, "question_submit") || !strcmp(buffer, "qs")) {
+            
+        }
+        else if (!strcmp(buffer, "answear_submit") || !strcmp(buffer, "as")) {
+            
+        }
+        else {
+            printf("unkown command\n");
+        }
+
+        /* Waits for user input */
+        fgets(command, sizeof(command), stdin);
+    }
+    
     freeaddrinfo(res);
     close(TCPfd);
     close(UDPfd);
@@ -129,3 +185,111 @@ int openTCP() {
 
     return fd;
 }
+
+void registerCommand(char *command) {
+
+    char message[256];
+    char *id;
+    char *c;
+
+    id = strtok(NULL, " ");
+    strcpy(message, "REG ");
+    strcat(message, id);
+
+    /* removes \n from end of string */
+    c = strchr(id, '\n');
+    *c = '\0';
+    strcpy(userID, id);
+
+    printf("%s", message);
+    sendMessageUDP(message);
+
+}
+
+void topicListCommand() {
+
+    char message[256];
+
+    strcpy(message, "LTP\n");
+
+    printf("%s", message);
+    sendMessageUDP(message);
+
+}
+
+void topicSelectCommand(char *command) {
+
+    char *topic;
+    char *c;
+
+    topic = strtok(NULL, " ");
+
+    /* removes \n from end of string */
+    c = strchr(topic, '\n');
+    *c = '\0';
+    strcpy(selectedTopic, topic);
+
+    printf("%s\n", topic);
+
+}
+
+void topicProposeCommand(char *command) {
+
+    char message[256];
+    char *topic;
+
+    topic = strtok(NULL, " ");
+    strcpy(message, "PTP ");
+    strcat(message, userID);
+    strcat(message, " ");
+    strcat(message, topic);
+
+    printf("%s", message);
+    sendMessageUDP(message);
+
+}
+
+void questionListCommand() {
+
+    char message[256];
+
+    strcpy(message, "LQU ");
+    strcat(message, selectedTopic);
+    strcat(message, "\n");
+
+    printf("%s", message);
+    sendMessageUDP(message);
+
+}
+
+void questionGetCommand(char *command) {
+    
+    char message[256];
+    char *question;
+    char *c;
+
+    question = strtok(NULL, " ");
+    strcpy(message, "GQU ");
+    strcat(message, selectedTopic);
+    strcat(message, " ");
+    strcat(message, question);
+
+    /* removes \n from end of string */
+    c = strchr(question, '\n');
+    *c = '\0';
+    strcpy(selectedQuestion, question);
+
+    printf("%s", message);
+    sendMessageTCP(message);
+
+}
+
+void sendMessageUDP(char *message) {
+    /* DOES NOTHING ATM */
+}
+
+void sendMessageTCP(char *message) {
+    /* DOES NOTHING ATM */
+}
+
+
