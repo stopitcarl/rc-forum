@@ -10,6 +10,8 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
+#define BUFFER_SIZE 256
+
 /*************************
  * VARIAVEIS GLOBAIS
  * ***********************/
@@ -48,16 +50,16 @@ void sendMessageTCP(char *message);
  * CODIGO
  * **********************/
 
-int main(int argc, char *argv[]) {   
+int main(int argc, char *argv[]) {
 
-    char hostName[100], command[256];
+    char hostName[100], command[BUFFER_SIZE];
     char *buffer;
     int UDPfd;
     int TCPfd;
 
     memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_INET; 
-    hints.ai_flags = AI_NUMERICSERV;    
+    hints.ai_family = AF_INET;
+    hints.ai_flags = AI_NUMERICSERV;
 
     /* Initializes default variables */
     strcpy(FSport, "58002");
@@ -77,7 +79,7 @@ int main(int argc, char *argv[]) {
     TCPfd = openTCP();
 
     /* Main cycle */
-    fgets(command, sizeof(command), stdin);
+    fgets(command, BUFFER_SIZE, stdin);
     while (strcmp(command, "exit\n")) {
 
         /* Gets command name */
@@ -103,19 +105,19 @@ int main(int argc, char *argv[]) {
             questionGetCommand(command);
         }
         else if (!strcmp(buffer, "question_submit") || !strcmp(buffer, "qs")) {
-            
+
         }
         else if (!strcmp(buffer, "answear_submit") || !strcmp(buffer, "as")) {
-            
+
         }
         else {
             printf("unkown command\n");
         }
 
         /* Waits for user input */
-        fgets(command, sizeof(command), stdin);
+        fgets(command, BUFFER_SIZE, stdin);
     }
-    
+
     freeaddrinfo(res);
     close(TCPfd);
     close(UDPfd);
@@ -176,7 +178,7 @@ int openTCP() {
         perror("ERROR: socket\n");
         exit(EXIT_FAILURE);
     }
-    
+
     /*
     if (connect(fd, res->ai_addr, res->ai_addrlen) == -1) {
         perror("ERROR: connect\n");
@@ -263,7 +265,7 @@ void questionListCommand() {
 }
 
 void questionGetCommand(char *command) {
-    
+
     char message[256];
     char *question;
     char *c;
@@ -291,5 +293,3 @@ void sendMessageUDP(char *message) {
 void sendMessageTCP(char *message) {
     /* DOES NOTHING ATM */
 }
-
-
