@@ -41,7 +41,7 @@ void topicProposeCommand(char *command);
 void questionListCommand();
 void questionGetCommand(char *command);
 void questionSubmitCommand(char *command);
-void answearSubmitCommand(char *command);
+void answerSubmitCommand(char *command);
 void sendMessageUDP(char *message);
 void sendMessageTCP(char *message);
 
@@ -107,7 +107,7 @@ int main(int argc, char *argv[]) {
         else if (!strcmp(buffer, "question_submit") || !strcmp(buffer, "qs")) {
 
         }
-        else if (!strcmp(buffer, "answear_submit") || !strcmp(buffer, "as")) {
+        else if (!strcmp(buffer, "answer_submit") || !strcmp(buffer, "as")) {
 
         }
         else {

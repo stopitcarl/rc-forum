@@ -10,8 +10,9 @@
 #include <netdb.h>
 #include <signal.h>
 
-#define PORT "58000"
+#define PORT "58044"
 #define BUFFER_SIZE 128
+#define SMALL_BUFFER_SIZE 64
 
 int n, udp, tcp, newfd;
 fd_set rfds;
@@ -101,6 +102,45 @@ int openUDP() {
     // ############# </Communications> #############
     return fd;
 }
+
+void handleCommand(char *request){
+  char type[SMALL_BUFFER_SIZE];
+
+  /* Gets command name */
+  type = strtok(command, " ");
+
+  /* Checks for command type */
+  // TODO: implement commented funtions
+  if (!strcmp(type, "REG")) {
+      //registerCommand(command);
+  }
+  else if (!strcmp(type, "LTP\n") || !strcmp(type, "tl\n")) {
+      //topicListCommand();
+  }
+  else if (!strcmp(type, "topic_select") || !strcmp(type, "ts")) {
+      // topicSelectCommand(command);
+  }
+  else if (!strcmp(type, "topic_propose") || !strcmp(type, "tp")) {
+      // topicProposeCommand(command);
+  }
+  else if (!strcmp(type, "question_list\n") || !strcmp(type, "ql\n")) {
+      // questionListCommand();
+  }
+  else if (!strcmp(type, "question_get") || !strcmp(type, "qg")) {
+      // questionGetCommand(command);
+  }
+  else if (!strcmp(type, "question_submit") || !strcmp(type, "qs")) {
+
+  }
+  else if (!strcmp(type, "answer_submit") || !strcmp(type, "as")) {
+
+  }
+  else {
+      printf("unkown command\n");
+  }
+
+}
+
 
 int main() {
     struct sigaction pipe, intr;
