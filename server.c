@@ -11,17 +11,18 @@
 #include <signal.h>
 
 #define PORT "58044"
-#define BUFFER_SIZE 128
+#define BUFFER_SIZE 1024
 #define SMALL_BUFFER_SIZE 64
 
-int n, udp, tcp, newfd;
+int n, udp, tcp, newfd, isTcp;
 fd_set rfds;
 socklen_t addrlen;
 struct addrinfo hints, *res;
 struct sockaddr_in addr;
 char buffer[BUFFER_SIZE];
 
-void closeServer() {
+void closeServer()
+{
     freeaddrinfo(res);
     close(newfd);
     FD_CLR(udp, &rfds);
@@ -32,12 +33,22 @@ void closeServer() {
     exit(EXIT_SUCCESS);
 }
 
-void error(const char *msg) {
+void error(const char *msg)
+{
     perror(msg);
     exit(EXIT_FAILURE);
 }
 
-int openTCP() {
+int reply(char *msg, int n)
+{
+    if (isTcp)
+        return write(newfd, msg, n);
+    else
+        return sendto(newfd, msg, n, 0, (struct sockaddr *)&addr, addrlen);
+}
+
+int openTCP()
+{
     //Sets up tcp socket
     int fd;
 
@@ -66,7 +77,8 @@ int openTCP() {
     return fd;
 }
 
-int openUDP() {
+int openUDP()
+{
     // Setup socket
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;      // IPv4
@@ -88,61 +100,78 @@ int openUDP() {
     if (n == -1)
         error("Error binding udp socket");
 
-    // ############# <Communications> #############
-    // addrlen = sizeof(addr);
-    // n = recvfrom(fd, buffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
-    // if (n == -1) /*error*/
-    //     exit(BAD);
-
-    // write(1, "received: ", 10);
-    // write(1, buffer, n);
-    // n = sendto(fd, buffer, n, 0, (struct sockaddr *)&addr, addrlen);
-    // if (n == -1) /*error*/
-    //     exit(BAD);
-    // ############# </Communications> #############
     return fd;
 }
 
-void handleCommand(char *request){
-  char type[SMALL_BUFFER_SIZE];
+/* Check if str has newLine at the end and if so, deletes it */
+int deleteNewLine(char *str)
+{
+    char *c;
+    if ((c = strchr(str, '\n')) != NULL)
+        *c = '\0';
 
-  /* Gets command name */
-  type = strtok(command, " ");
-
-  /* Checks for command type */
-  // TODO: implement commented funtions
-  if (!strcmp(type, "REG")) {
-      //registerCommand(command);
-  }
-  else if (!strcmp(type, "LTP\n") || !strcmp(type, "tl\n")) {
-      //topicListCommand();
-  }
-  else if (!strcmp(type, "topic_select") || !strcmp(type, "ts")) {
-      // topicSelectCommand(command);
-  }
-  else if (!strcmp(type, "topic_propose") || !strcmp(type, "tp")) {
-      // topicProposeCommand(command);
-  }
-  else if (!strcmp(type, "question_list\n") || !strcmp(type, "ql\n")) {
-      // questionListCommand();
-  }
-  else if (!strcmp(type, "question_get") || !strcmp(type, "qg")) {
-      // questionGetCommand(command);
-  }
-  else if (!strcmp(type, "question_submit") || !strcmp(type, "qs")) {
-
-  }
-  else if (!strcmp(type, "answer_submit") || !strcmp(type, "as")) {
-
-  }
-  else {
-      printf("unkown command\n");
-  }
-
+    return c != NULL;
 }
 
+void registerCommand(char *command)
+{
+    char *type = strtok(NULL, " ");
 
-int main() {
+    if (strlen(type) == 6 && deleteNewLine(type))
+    {
+        reply("RGR OK", 6);
+    }
+    else
+        reply("RGR NOK", 7);
+}
+
+void handleCommand(char *request)
+{
+    char *type;
+
+    /* Gets command name */
+    type = strtok(request, " ");
+
+    /* Checks for command type */
+    // TODO: implement commented funtions
+    if (!strcmp(type, "REG"))
+    {
+        registerCommand(request);
+    }
+    else if (!strcmp(type, "LTP\n"))
+    {
+        //topicListCommand();
+    }
+    else if (!strcmp(type, "topic_select"))
+    {
+        // topicSelectCommand(command);
+    }
+    else if (!strcmp(type, "topic_propose") || !strcmp(type, "tp"))
+    {
+        // topicProposeCommand(command);
+    }
+    else if (!strcmp(type, "question_list\n") || !strcmp(type, "ql\n"))
+    {
+        // questionListCommand();
+    }
+    else if (!strcmp(type, "question_get") || !strcmp(type, "qg"))
+    {
+        // questionGetCommand(command);
+    }
+    else if (!strcmp(type, "question_submit") || !strcmp(type, "qs"))
+    {
+    }
+    else if (!strcmp(type, "answer_submit") || !strcmp(type, "as"))
+    {
+    }
+    else
+    {
+        reply("unkown command\n", 15);
+    }
+}
+
+int main()
+{
     struct sigaction pipe, intr;
 
     udp = openUDP();
@@ -170,21 +199,28 @@ int main() {
         if (n <= 0)
             error("Error on select");
 
-        if (FD_ISSET(udp, &rfds)) {
+        if (FD_ISSET(udp, &rfds))
+        {
             //Got message from udp server
             addrlen = sizeof(addr);
             n = recvfrom(udp, buffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
             if (n == -1)
                 error("Error receiving from udp socket");
 
+            // Update newfd
+            isTcp = 0;
+            newfd = udp;
+
             write(1, "udp received: ", 14);
             write(1, buffer, n);
-            n = sendto(udp, buffer, n, 0, (struct sockaddr *)&addr, addrlen);
+            /*n = reply(buffer, n);
             if (n == -1)
                 error("Error sending to udp socket");
+            */
         }
 
-        if (FD_ISSET(tcp, &rfds)) {
+        if (FD_ISSET(tcp, &rfds))
+        {
             //Got message from tcp server
             if ((newfd = accept(tcp, (struct sockaddr *)&addr, &addrlen)) == -1)
                 error("Error accepting tcp connection");
@@ -194,13 +230,15 @@ int main() {
             if (n == -1)
                 error("Error reading from tcp socket");
 
-
-            write(1, "tcp received", 14);
+            isTcp = 1;
+            write(1, "tcp received: ", 14);
             write(1, buffer, n);
-            n = write(newfd, buffer, n);
+            /*n = reply(buffer, n);
             if (n == -1)
                 error("Error writing to tcp socket");
+            */
         }
+        handleCommand(buffer);
     }
 
     puts("closing server, byeeee\n");
