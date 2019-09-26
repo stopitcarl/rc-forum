@@ -1,16 +1,24 @@
 // Client
 
+/* TODO: 
+        1. CLIENT ABRE TCP MANDA MENSAGEM FECHA TCP.
+        2. MUDAR OS STRCAT E OS STRCPY PARA "SPRINTF"
+        3. etc...
+*/
+
+
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 
-#define BUFFER_SIZE 256
+#define BUFFER_SIZE 1024
 
 /*************************
  * VARIAVEIS GLOBAIS
@@ -18,6 +26,9 @@
 
 char FShost[50];
 char FSport[10];
+
+int UDPfd;
+int TCPfd;
 
 socklen_t addrlen;
 struct addrinfo hints, *res;
@@ -42,8 +53,8 @@ void questionListCommand();
 void questionGetCommand(char *command);
 void questionSubmitCommand(char *command);
 void answerSubmitCommand(char *command);
-void sendMessageUDP(char *message);
-void sendMessageTCP(char *message);
+void sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSize);
+char* sendMessageTCP(char *message, int mBufferSize, int *responseSize);
 
 
 /*************************
@@ -54,8 +65,6 @@ int main(int argc, char *argv[]) {
 
     char hostName[100], command[BUFFER_SIZE];
     char *buffer;
-    int UDPfd;
-    int TCPfd;
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;
@@ -134,11 +143,9 @@ void parseArgs(int argc, char *argv[]) {
             case 'n':
                 strcpy(FShost, optarg);
                 hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV;
-                printf("Current IP:%s\n", optarg);
                 break;
             case 'p':
                 strcpy(FSport, optarg);
-                printf("Current port:%s\n", optarg);
                 break;
         }
     }
@@ -190,7 +197,8 @@ int openTCP() {
 
 void registerCommand(char *command) {
 
-    char message[256];
+    char message[BUFFER_SIZE];
+    char response[BUFFER_SIZE];
     char *id;
     char *c;
 
@@ -201,21 +209,51 @@ void registerCommand(char *command) {
     /* removes \n from end of string */
     c = strchr(id, '\n');
     *c = '\0';
-    strcpy(userID, id);
+
+    /*strcpy(userID, id);*/
 
     printf("%s", message);
-    sendMessageUDP(message);
+    sendMessageUDP(message, BUFFER_SIZE, response, BUFFER_SIZE);
+
+    /* Shows response to user */
+    if (!strcmp(response, "0K\n")) {
+        printf("User OK\n");
+        strcpy(userID, id);
+    }
+    else if (strcmp(response, "NOK\n")){
+        printf("User NOK\n");
+    }
+    else {
+        printf("ERR\n");
+    }
 
 }
 
 void topicListCommand() {
 
-    char message[256];
+    char message[BUFFER_SIZE];
+    char response[BUFFER_SIZE];
 
     strcpy(message, "LTP\n");
 
     printf("%s", message);
-    sendMessageUDP(message);
+    sendMessageUDP(message, BUFFER_SIZE, response, BUFFER_SIZE);
+
+    /* Shows response to user */
+    char *buffer;
+    int n;
+    char *c;
+
+    buffer = strtok(response, " ");
+    buffer = strtok(NULL, " ");
+    n = atoi(buffer);
+    printf("Topic list (Number Topic UserID):");
+    for(; n > 0; n--) {
+        buffer = strtok(NULL, " ");
+        c = strchr(buffer, ':');
+        *c = ' ';
+        printf("%d %s\n", n - n + 1, buffer);
+    }
 
 }
 
@@ -229,6 +267,7 @@ void topicSelectCommand(char *command) {
     /* removes \n from end of string */
     c = strchr(topic, '\n');
     *c = '\0';
+
     strcpy(selectedTopic, topic);
 
     printf("%s\n", topic);
@@ -237,7 +276,8 @@ void topicSelectCommand(char *command) {
 
 void topicProposeCommand(char *command) {
 
-    char message[256];
+    char message[BUFFER_SIZE];
+    char response[BUFFER_SIZE];
     char *topic;
 
     topic = strtok(NULL, " ");
@@ -247,28 +287,62 @@ void topicProposeCommand(char *command) {
     strcat(message, topic);
 
     printf("%s", message);
-    sendMessageUDP(message);
+    sendMessageUDP(message, BUFFER_SIZE, response, BUFFER_SIZE);
+
+    /* Shows response to user */
+    if (!strcmp(response, "0K\n")) {
+        printf("Topic OK\n");
+    }
+    else if (strcmp(response, "DUP\n")){
+        printf("Topic DUP\n");
+    }
+    else if (strcmp(response, "FUL\n")){
+        printf("Topic list if full\n");
+    }
+    else {
+        printf("ERR\n");
+    }
 
 }
 
 void questionListCommand() {
 
-    char message[256];
+    char message[BUFFER_SIZE];
+    char response[BUFFER_SIZE];
 
     strcpy(message, "LQU ");
     strcat(message, selectedTopic);
     strcat(message, "\n");
 
     printf("%s", message);
-    sendMessageUDP(message);
+    sendMessageUDP(message, BUFFER_SIZE, response, BUFFER_SIZE);
+
+    /* Shows response to user */
+    char *buffer;
+    int n;
+    char *c;
+
+    buffer = strtok(response, " ");
+    buffer = strtok(NULL, " ");
+    n = atoi(buffer);
+    printf("Question list (Number UserID AvailableAnswers):");
+    for(; n > 0; n--) {
+        buffer = strtok(NULL, " ");
+        while ((c = strchr(buffer, ':')) != NULL) {
+            *c = ' ';
+        }
+        printf("%d %s\n", n - n + 1, buffer);
+    }
 
 }
 
 void questionGetCommand(char *command) {
 
-    char message[256];
+    char message[BUFFER_SIZE];
+    char *response;
     char *question;
     char *c;
+    int responseSize = 0;
 
     question = strtok(NULL, " ");
     strcpy(message, "GQU ");
@@ -282,14 +356,102 @@ void questionGetCommand(char *command) {
     strcpy(selectedQuestion, question);
 
     printf("%s", message);
-    sendMessageTCP(message);
+    response = sendMessageTCP(message, BUFFER_SIZE, &responseSize);
+
+    /* Shows response to user */
+    char *buffer, questionName[15], answerName[18];
+    int qSize, aSize, N, AN;
+
+    if (mkdir(selectedTopic, 0777) == -1) {
+        perror("ERROR: mkdir\n");
+        exit(EXIT_FAILURE);
+    }
+    strtok(response, " "); /* USERID */
+
+    /* Creates question file */
+    char *qData;
+
+    buffer = strtok(NULL, " ");
+    qSize = atoi(buffer);
+    qData = strtok(NULL, " ");
+    strcpy(questionName, selectedQuestion);
+    strcat(selectedQuestion, ".txt");
+    FILE *q = fopen(questionName, "wb");
+    fwrite(qData, sizeof(char), qSize, q);
+    fclose(q);
+
+    /* Creates answer files */
+    char *aData;
+
+    buffer = strtok(NULL, " ");
+    N = atoi(buffer);
+    for (; N > 0; N--) {
+        buffer = strtok(NULL, " ");
+        AN = atoi(buffer);
+        strtok(NULL, " "); /* USERID */
+        buffer = strtok(NULL, " ");
+        aSize = atoi(buffer);
+        aData = strtok(NULL, " ");
+        sprintf(answerName, "%s_%d.txt", selectedQuestion, AN);
+        FILE *a = fopen(answerName, "wb");
+        fwrite(aData, sizeof(char), aSize, a);
+        fclose(a);  
+    }
+
+    free(response);
 
 }
 
-void sendMessageUDP(char *message) {
-    /* DOES NOTHING ATM */
+void sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSize) {
+    
+    /* Sends message */
+    /*
+    if (sendto(UDPfd, message, mBufferSize, 0, res->ai_addr, res->ai_addrlen) == -1) {
+        perror("ERROR: sendto\n");
+        exit(EXIT_FAILURE);
+    }
+    */
+    /* Waits for response */
+    /*
+    if (recvfrom(UDPfd, response, rBufferSize, 0, (struct sockaddr*) &addr, &addrlen) == -1) {
+        perror("ERROR: recvfrom");
+        exit(EXIT_FAILURE);
+    }
+    */
+    
 }
 
-void sendMessageTCP(char *message) {
-    /* DOES NOTHING ATM */
+char* sendMessageTCP(char *message, int mBufferSize, int *responseSize) {
+
+    char *response;
+    int n, left = BUFFER_SIZE;
+
+    /* Sends message */
+    /*
+    if (write(TCPfd, message, mBufferSize) == -1) {
+        perror("ERROR: write\n");
+        exit(EXIT_FAILURE);
+    }
+    */
+    /* Waits for response */
+    *responseSize = BUFFER_SIZE;
+    response = (char*) malloc(BUFFER_SIZE);
+    while ((n = read(TCPfd, response + *responseSize - left, left)) > 0) {
+        left -= n;
+        if (left == 0) {
+            left = BUFFER_SIZE;
+            *responseSize += BUFFER_SIZE;
+            if((response = (char *) realloc(response, *responseSize)) == NULL) {
+                perror("ERROR: realloc\n");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+    if (n == -1) {
+        perror("ERROR: read\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    return response;
+
 }
