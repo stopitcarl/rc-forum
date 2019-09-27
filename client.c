@@ -1,9 +1,10 @@
 // Client
 
 /* TODO: 
-        1. CLIENT ABRE TCP MANDA MENSAGEM FECHA TCP.
-        2. MUDAR OS STRCAT E OS STRCPY PARA "SPRINTF"
-        3. etc...
+        1. IMAGES
+        2. SAFETY
+        3. TRIGGER HAPPY
+        4. ETC...
 */
 
 
@@ -85,7 +86,6 @@ int main(int argc, char *argv[]) {
     printf("%s\n", FSport);
 
     UDPfd = openUDP();
-    TCPfd = openTCP();
 
     /* Main cycle */
     fgets(command, BUFFER_SIZE, stdin);
@@ -114,10 +114,10 @@ int main(int argc, char *argv[]) {
             questionGetCommand(command);
         }
         else if (!strcmp(buffer, "question_submit") || !strcmp(buffer, "qs")) {
-
+            questionSubmitCommand(command);
         }
         else if (!strcmp(buffer, "answer_submit") || !strcmp(buffer, "as")) {
-
+            answerSubmitCommand(command);
         }
         else {
             printf("unkown command\n");
@@ -128,7 +128,6 @@ int main(int argc, char *argv[]) {
     }
 
     freeaddrinfo(res);
-    close(TCPfd);
     close(UDPfd);
 
     return 0;
@@ -186,11 +185,10 @@ int openTCP() {
         exit(EXIT_FAILURE);
     }
 
-    /*
     if (connect(fd, res->ai_addr, res->ai_addrlen) == -1) {
         perror("ERROR: connect\n");
         exit(EXIT_FAILURE);
-    }*/
+    }
 
     return fd;
 }
@@ -203,24 +201,21 @@ void registerCommand(char *command) {
     char *c;
 
     id = strtok(NULL, " ");
-    strcpy(message, "REG ");
-    strcat(message, id);
 
     /* removes \n from end of string */
     c = strchr(id, '\n');
     *c = '\0';
 
-    /*strcpy(userID, id);*/
+    sprintf(message, "REG %s\n", id);
 
-    printf("%s", message);
     sendMessageUDP(message, BUFFER_SIZE, response, BUFFER_SIZE);
 
     /* Shows response to user */
-    if (!strcmp(response, "0K\n")) {
+    if (!strcmp(response, " REG 0K\n")) {
         printf("User OK\n");
         strcpy(userID, id);
     }
-    else if (strcmp(response, "NOK\n")){
+    else if (!strcmp(response, "REG NOK\n")){
         printf("User NOK\n");
     }
     else {
@@ -236,7 +231,6 @@ void topicListCommand() {
 
     strcpy(message, "LTP\n");
 
-    printf("%s", message);
     sendMessageUDP(message, BUFFER_SIZE, response, BUFFER_SIZE);
 
     /* Shows response to user */
@@ -244,7 +238,17 @@ void topicListCommand() {
     int n;
     char *c;
 
-    buffer = strtok(response, " ");
+    /* Checks for \n */
+    c = strrchr(response, '\n');
+    if (c == NULL) {
+        printf("ERR\n");
+        return;
+    }
+    else {
+        *c = '\0';
+    }
+
+    strtok(response, " ");
     buffer = strtok(NULL, " ");
     n = atoi(buffer);
     printf("Topic list (Number Topic UserID):");
@@ -281,23 +285,19 @@ void topicProposeCommand(char *command) {
     char *topic;
 
     topic = strtok(NULL, " ");
-    strcpy(message, "PTP ");
-    strcat(message, userID);
-    strcat(message, " ");
-    strcat(message, topic);
+    sprintf(message, "PTP %s %s", userID, topic);
 
-    printf("%s", message);
     sendMessageUDP(message, BUFFER_SIZE, response, BUFFER_SIZE);
 
     /* Shows response to user */
-    if (!strcmp(response, "0K\n")) {
+    if (!strcmp(response, "PTR 0K\n")) {
         printf("Topic OK\n");
     }
-    else if (strcmp(response, "DUP\n")){
+    else if (strcmp(response, "PTR DUP\n")){
         printf("Topic DUP\n");
     }
-    else if (strcmp(response, "FUL\n")){
-        printf("Topic list if full\n");
+    else if (strcmp(response, "PTR FUL\n")){
+        printf("Topic list is full\n");
     }
     else {
         printf("ERR\n");
@@ -310,11 +310,8 @@ void questionListCommand() {
     char message[BUFFER_SIZE];
     char response[BUFFER_SIZE];
 
-    strcpy(message, "LQU ");
-    strcat(message, selectedTopic);
-    strcat(message, "\n");
+    sprintf(message, "LQU %s\n", selectedTopic);
 
-    printf("%s", message);
     sendMessageUDP(message, BUFFER_SIZE, response, BUFFER_SIZE);
 
     /* Shows response to user */
@@ -322,7 +319,17 @@ void questionListCommand() {
     int n;
     char *c;
 
-    buffer = strtok(response, " ");
+    /* Checks for \n */
+    c = strrchr(response, '\n');
+    if (c == NULL) {
+        printf("ERR\n");
+        return;
+    }
+    else {
+        *c = '\0';
+    }
+
+    strtok(response, " ");
     buffer = strtok(NULL, " ");
     n = atoi(buffer);
     printf("Question list (Number UserID AvailableAnswers):");
@@ -342,25 +349,34 @@ void questionGetCommand(char *command) {
     char *response;
     char *question;
     char *c;
-    int responseSize = 0;
+    int responseSize;
 
     question = strtok(NULL, " ");
-    strcpy(message, "GQU ");
-    strcat(message, selectedTopic);
-    strcat(message, " ");
-    strcat(message, question);
 
     /* removes \n from end of string */
     c = strchr(question, '\n');
     *c = '\0';
     strcpy(selectedQuestion, question);
 
-    printf("%s", message);
+    sprintf(message, "GQU %s %s\n", selectedTopic, selectedQuestion);
+
     response = sendMessageTCP(message, BUFFER_SIZE, &responseSize);
 
     /* Shows response to user */
     char *buffer, questionName[15], answerName[18];
     int qSize, aSize, N, AN;
+
+    /* Checks for \n */
+    c = strrchr(response, '\n');
+    if (c == NULL) {
+        printf("ERR\n");
+        return;
+    }
+    else {
+        *c = '\0';
+    }
+
+    /* Creates question file */
 
     if (mkdir(selectedTopic, 0777) == -1) {
         perror("ERROR: mkdir\n");
@@ -368,14 +384,15 @@ void questionGetCommand(char *command) {
     }
     strtok(response, " "); /* USERID */
 
-    /* Creates question file */
     char *qData;
 
+    /* Gets metadata */
     buffer = strtok(NULL, " ");
     qSize = atoi(buffer);
     qData = strtok(NULL, " ");
-    strcpy(questionName, selectedQuestion);
-    strcat(selectedQuestion, ".txt");
+    sprintf(questionName, "%s/%s.txt", selectedTopic, selectedQuestion);
+
+    /* Stores question data in file */
     FILE *q = fopen(questionName, "wb");
     fwrite(qData, sizeof(char), qSize, q);
     fclose(q);
@@ -386,13 +403,17 @@ void questionGetCommand(char *command) {
     buffer = strtok(NULL, " ");
     N = atoi(buffer);
     for (; N > 0; N--) {
+
+        /* Gets metadata */
         buffer = strtok(NULL, " ");
         AN = atoi(buffer);
         strtok(NULL, " "); /* USERID */
         buffer = strtok(NULL, " ");
         aSize = atoi(buffer);
         aData = strtok(NULL, " ");
-        sprintf(answerName, "%s_%d.txt", selectedQuestion, AN);
+        sprintf(answerName, "%s/%s_%d.txt", selectedTopic, selectedQuestion, AN);
+
+        /* Stores answer data in file */
         FILE *a = fopen(answerName, "wb");
         fwrite(aData, sizeof(char), aSize, a);
         fclose(a);  
@@ -402,37 +423,151 @@ void questionGetCommand(char *command) {
 
 }
 
+void questionSubmitCommand(char *command) {
+
+    char *question;
+    char *fileName;
+    int qsize;
+    char *qdata;
+    char *c;
+    char *response;
+    int responseSize;
+
+    question = strtok(NULL, " ");
+    fileName = strtok(NULL, " ");
+
+    /* removes \n from end of string */
+    c = strchr(fileName, '\n');
+    *c = '\0';
+
+    /* Gets file data */
+    FILE *f = fopen(fileName, "r");
+    if (f == NULL) {
+        printf("File not found\n");
+        return;
+    }
+    fseek(f, 0, SEEK_END);
+    qsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    qdata = (char*) malloc(qsize);
+    fread(qdata, sizeof(char), qsize, f);
+
+    /* Creates message */
+    char message[BUFFER_SIZE + qsize];
+    sprintf(message, "QUS %s %s %s %d %s\n", userID, selectedTopic, question, qsize, qdata);
+
+    response = sendMessageTCP(message, BUFFER_SIZE + qsize, &responseSize);
+
+    /* Shows response to user */
+    if (!strcmp(response, "QUR 0K\n")) {
+        printf("question OK\n");
+    }
+    else if (strcmp(response, "QUR DUP\n")){
+        printf("question DUP\n");
+    }
+    else if (strcmp(response, "QUR FUL\n")){
+        printf("question list is full\n");
+    }
+    else {
+        printf("NOK\n");
+    }
+
+    free(response);
+
+}
+
+void answerSubmitCommand(char *command) {
+
+    char *fileName;
+    int asize;
+    char *adata;
+    char *c;
+    char *response;
+    int responseSize;
+
+    fileName = strtok(NULL, " ");
+
+    /* removes \n from end of string */
+    c = strchr(fileName, '\n');
+    *c = '\0';
+
+    /* Gets file data */
+    FILE *f = fopen(fileName, "r");
+    if (f == NULL) {
+        printf("File not found\n");
+        return;
+    }
+    fseek(f, 0, SEEK_END);
+    asize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    adata = (char*) malloc(asize);
+    fread(adata, sizeof(char), asize, f);
+
+    /* Creates message */
+    char message[BUFFER_SIZE + asize];
+    sprintf(message, "QUS %s %s %s %d %s\n", userID, selectedTopic, selectedQuestion, asize, adata);
+
+    response = sendMessageTCP(message, BUFFER_SIZE + asize, &responseSize);
+
+    /* Shows response to user */
+    if (!strcmp(response, "NAS 0K\n")) {
+        printf("answer OK\n");
+    }
+    else if (strcmp(response, "ANS FUL\n")){
+        printf("answer list is full\n");
+    }
+    else {
+        printf("NOK\n");
+    }
+
+    free(response);
+
+}
+
 void sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSize) {
     
+    int n;
+    
+    printf("Sending message: %s", message);
     /* Sends message */
-    /*
-    if (sendto(UDPfd, message, mBufferSize, 0, res->ai_addr, res->ai_addrlen) == -1) {
+    if ( (n =sendto(UDPfd, message, mBufferSize, 0, res->ai_addr, res->ai_addrlen)) == -1) {
         perror("ERROR: sendto\n");
         exit(EXIT_FAILURE);
     }
-    */
+    printf("Sent: %d bytes\n", n);
+
     /* Waits for response */
-    /*
-    if (recvfrom(UDPfd, response, rBufferSize, 0, (struct sockaddr*) &addr, &addrlen) == -1) {
+    if ( (n = recvfrom(UDPfd, response, rBufferSize, 0, (struct sockaddr*) &addr, &addrlen)) == -1) {
         perror("ERROR: recvfrom");
         exit(EXIT_FAILURE);
     }
-    */
+    printf("Recieved: %d bytes\n", n);
+    printf("Recieved message: %s", response);
     
 }
 
 char* sendMessageTCP(char *message, int mBufferSize, int *responseSize) {
 
     char *response;
-    int n, left = BUFFER_SIZE;
+    int n, written = 0, left = BUFFER_SIZE;
 
+    *responseSize = 0;
+
+    TCPfd = openTCP();
+
+    printf("Sending message: %s", message);
     /* Sends message */
-    /*
-    if (write(TCPfd, message, mBufferSize) == -1) {
-        perror("ERROR: write\n");
-        exit(EXIT_FAILURE);
+    while (written < mBufferSize) {
+        n = write(TCPfd, message + written, mBufferSize - written);
+        if (n == -1) {
+            perror("ERROR: write\n");
+            exit(EXIT_FAILURE);
+        }
+        written += n;
     }
-    */
+    
     /* Waits for response */
     *responseSize = BUFFER_SIZE;
     response = (char*) malloc(BUFFER_SIZE);
@@ -451,7 +586,10 @@ char* sendMessageTCP(char *message, int mBufferSize, int *responseSize) {
         perror("ERROR: read\n");
         exit(EXIT_FAILURE);
     }
-    
+    printf("Recieved message: %s", response);
+
+    close(TCPfd);
+
     return response;
 
 }
