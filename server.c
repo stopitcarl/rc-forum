@@ -9,22 +9,22 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <signal.h>
+#include <errno.h>
+#include <sys/wait.h>
 
 #define PORT "58044"
 #define BUFFER_SIZE 1024
 #define SMALL_BUFFER_SIZE 64
 
-int n, udp, tcp, newfd, isTcp;
+int n, udp, tcp;
 fd_set rfds;
 socklen_t addrlen;
 struct addrinfo hints, *res;
 struct sockaddr_in addr;
-char buffer[BUFFER_SIZE];
 
 void closeServer()
 {
     freeaddrinfo(res);
-    close(newfd);
     FD_CLR(udp, &rfds);
     close(udp);
     FD_CLR(tcp, &rfds);
@@ -39,13 +39,50 @@ void error(const char *msg)
     exit(EXIT_FAILURE);
 }
 
-int reply(char *msg, int n)
-{
-    if (isTcp)
-        return write(newfd, msg, n);
-    else
-        return sendto(newfd, msg, n, 0, (struct sockaddr *)&addr, addrlen);
+void waitChild() {
+    pid_t pid;
+
+    if ((pid = waitpid(-1, NULL, WNOHANG)) == -1)
+        error("Error waiting for child");
 }
+
+/*Reads from the tcp socket*/
+void readFromTCP(int src, char *buffer) {
+    int nbytes, nleft, nread;
+    char *ptr = buffer;
+
+    nbytes = BUFFER_SIZE;
+    nleft = nbytes;
+
+    /*Makes sure the entire message is read*/
+    while (nleft > 0) {
+        nread = read(src, ptr, nleft);
+        if (nread == -1)
+            error("Error reading from tcp socket");
+        else if (nread == 0)
+            break;
+        nleft -= nread;
+        ptr += nread;
+    }
+}
+
+/*Writes to tcp socket*/
+void replyToTCP(char *msg, int dst)
+{
+    int nbytes, nleft, nwritten;
+
+    nbytes = strlen(msg);
+    nleft = nbytes;
+
+    /*Makes sure the entire message is written*/
+    while (nleft > 0) {
+        nwritten = write(dst, msg, nleft);
+        if (nwritten <= 0)
+            error("Error writing to tcp socket");
+        nleft -= nwritten;
+    }
+}
+
 
 int openTCP()
 {
@@ -71,6 +108,7 @@ int openTCP()
     if (n == -1)
         error("Error binding tcp socket");
 
+    //TODO change listen number
     if (listen(fd, 5) == -1)
         error("Error on listen");
 
@@ -113,19 +151,20 @@ int deleteNewLine(char *str)
     return c != NULL;
 }
 
-void registerCommand(char *command)
+/*Performs register command and saves the reply in status*/
+void registerCommand(char *command, char *status)
 {
     char *type = strtok(NULL, " ");
 
     if (strlen(type) == 6 && deleteNewLine(type))
     {
-        reply("RGR OK", 6);
+        strcpy(status, "RGR OK\n");
     }
     else
-        reply("RGR NOK", 7);
+        strcpy(status, "RGR NOK\n");
 }
 
-void handleCommand(char *request)
+void handleCommand(char *request, char *status)
 {
     char *type;
 
@@ -136,43 +175,43 @@ void handleCommand(char *request)
     // TODO: implement commented funtions
     if (!strcmp(type, "REG"))
     {
-        registerCommand(request);
+        registerCommand(request, status);
     }
-    else if (!strcmp(type, "LTP\n"))
+    else if (!strcmp(type, "LTP"))
     {
         //topicListCommand();
     }
-    else if (!strcmp(type, "topic_select"))
-    {
-        // topicSelectCommand(command);
-    }
-    else if (!strcmp(type, "topic_propose") || !strcmp(type, "tp"))
+    else if (!strcmp(type, "PTP"))
     {
         // topicProposeCommand(command);
     }
-    else if (!strcmp(type, "question_list\n") || !strcmp(type, "ql\n"))
+    else if (!strcmp(type, "LQU"))
     {
         // questionListCommand();
     }
-    else if (!strcmp(type, "question_get") || !strcmp(type, "qg"))
+    else if (!strcmp(type, "GQU"))
     {
         // questionGetCommand(command);
     }
-    else if (!strcmp(type, "question_submit") || !strcmp(type, "qs"))
+    else if (!strcmp(type, "QUS"))
     {
     }
-    else if (!strcmp(type, "answer_submit") || !strcmp(type, "as"))
+    else if (!strcmp(type, "ANS"))
     {
     }
     else
     {
-        reply("unkown command\n", 15);
+        strcpy(status, "ERR\n");
     }
 }
 
 int main()
 {
-    struct sigaction pipe, intr;
+    struct sigaction pipe, intr, child;
+    char status[BUFFER_SIZE];
+    char buffer[BUFFER_SIZE];
+    int client;
+    pid_t pid;
 
     udp = openUDP();
     tcp = openTCP();
@@ -189,6 +228,12 @@ int main()
     if (sigaction(SIGINT, &intr, NULL) == -1)
         error("Error on sigacton");
 
+    //Sets up signal handler for waiting children
+    memset(&child, 0, sizeof child);
+    child.sa_handler = waitChild;
+    if (sigaction(SIGCHLD, &child, NULL) == -1)
+        error("Error on sigaction");
+
     while (1)
     {
         FD_ZERO(&rfds);
@@ -196,10 +241,11 @@ int main()
         FD_SET(tcp, &rfds);
 
         n = select(FD_SETSIZE, &rfds, NULL, NULL, NULL);
-        if (n <= 0)
+        if (n <= 0 && errno != EINTR) {
             error("Error on select");
+        }
 
-        if (FD_ISSET(udp, &rfds))
+        else if (FD_ISSET(udp, &rfds))
         {
             //Got message from udp server
             addrlen = sizeof(addr);
@@ -207,43 +253,48 @@ int main()
             if (n == -1)
                 error("Error receiving from udp socket");
 
-            // Update newfd
-            isTcp = 0;
-            newfd = udp;
+            // Update client
+            client = udp;
 
             write(1, "udp received: ", 14);
             write(1, buffer, n);
-            /*n = reply(buffer, n);
+
+            handleCommand(buffer, status);
+            n = sendto(client, status, strlen(status), 0, (struct sockaddr *)&addr, addrlen);
             if (n == -1)
-                error("Error sending to udp socket");
-            */
+                error("Error writing to udp socket");
         }
 
-        if (FD_ISSET(tcp, &rfds))
+        else if (FD_ISSET(tcp, &rfds))
         {
             //Got message from tcp server
-            if ((newfd = accept(tcp, (struct sockaddr *)&addr, &addrlen)) == -1)
+            int ret;
+
+            if ((client = accept(tcp, (struct sockaddr *)&addr, &addrlen)) == -1)
                 error("Error accepting tcp connection");
 
-            //Read message
-            n = read(newfd, buffer, BUFFER_SIZE);
-            if (n == -1)
-                error("Error reading from tcp socket");
+            //Creates child to handle tcp connection
+            if ((pid = fork()) == -1)
+                error("Error on fork");
+            else if (pid == 0) {
+                close(tcp);
+                readFromTCP(client, buffer);
+                handleCommand(buffer, status);
+                replyToTCP(status, client);
+                close(client);
+                exit(EXIT_SUCCESS);
+            }
 
-            isTcp = 1;
-            write(1, "tcp received: ", 14);
-            write(1, buffer, n);
-            /*n = reply(buffer, n);
-            if (n == -1)
-                error("Error writing to tcp socket");
-            */
+            do {
+                ret = close(client);
+            } while (ret == -1 && errno == EINTR);
+            if (ret == -1)
+                error("Error closing client");
         }
-        handleCommand(buffer);
     }
 
     puts("closing server, byeeee\n");
     freeaddrinfo(res);
-    close(newfd);
     FD_CLR(udp, &rfds);
     close(udp);
     FD_CLR(tcp, &rfds);
