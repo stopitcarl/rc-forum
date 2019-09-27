@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
     hints.ai_flags = AI_NUMERICSERV;
 
     /* Initializes default variables */
-    strcpy(FSport, "58002");
+    strcpy(FSport, "58044");
     if(gethostname(hostName, 100)) {
         perror("ERROR: gethostname\n");
         exit(EXIT_FAILURE);
