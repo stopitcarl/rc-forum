@@ -2,9 +2,8 @@
 
 /* TODO: 
         1. RUN TESTS TO SEE IF STUFF WORKS
-        2. SAFETY ON UDP COMMANDS
-        3. TS NUMBER/QS NUMBER
-        4. ETC...
+        2. TS NUMBER/QS NUMBER
+        3. ETC...
 */
 
 #include <string.h>
@@ -59,7 +58,7 @@ char* handleFile(char *content, int cSize, char *fn);
 char* handleImage(char *content, int cSize, char *fn);
 void questionSubmitCommand(char *command);
 void answerSubmitCommand(char *command);
-char* submitAux(char *type, char *userID, char *topic, char *question);
+char* submitAux(char *type, char *userID, char *topic, char *question, long *bufferSize);
 int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSize);
 char* sendMessageTCP(char *message, int mBufferSize, int *responseSize);
 
@@ -104,18 +103,13 @@ int main(int argc, char *argv[]) {
             registerCommand(command);
         }
         else if (!strcmp(buffer, "topic_list\n") || !strcmp(buffer, "tl\n")) {
-            if (tIsSet == 0) {
-                printf("ERR\n");
-            }
-            else {
-                topicListCommand();
-            }
+            topicListCommand();
         }
         else if (!strcmp(buffer, "topic_select") || !strcmp(buffer, "ts")) {
             topicSelectCommand(command);
         }
         else if (!strcmp(buffer, "topic_propose") || !strcmp(buffer, "tp")) {
-            if (tIsSet == 0) {
+            if (uIsSet == 0) {
                 printf("ERR\n");
             }
             else {
@@ -233,17 +227,16 @@ void registerCommand(char *command) {
     char message[BUFFER_SIZE], response[BUFFER_SIZE], *c, *buffer, *i;
     int id, responseSize;
 
+    /* Gets id */
     buffer = strtok(NULL, " ");
 
     /* removes \n from end of string */
     c = strchr(buffer, '\n');
     if (c == NULL) {
-        printf("ERR");
+        printf("ERR\n");
         return;
     }
     *c = '\0';
-
-    /* Gets id */
     if (strlen(buffer) != 5) {
         printf("ERR\n");
         return;
@@ -276,12 +269,12 @@ void registerCommand(char *command) {
 
     /* Shows response to user */
     if (!strcmp(response, "RGR OK")) {
-        printf("OK\n");
         sprintf(userID, "%d", id);
         uIsSet = 1;
+        printf("User %s registered successfully\n", userID);
     }
     else if (!strcmp(response, "RGR NOK")){
-        printf("NOK\n");
+        printf("Unable to register user %d\n", id);
     }
     else {
         printf("ERR\n");
@@ -291,10 +284,8 @@ void registerCommand(char *command) {
 
 void topicListCommand() {
 
-    char message[BUFFER_SIZE];
-    char response[BUFFER_SIZE];
+    char message[BUFFER_SIZE], response[BUFFER_SIZE], *i;
     int responseSize;
-    char *i;
 
     strcpy(message, "LTP\n");
 
@@ -317,9 +308,8 @@ void topicListCommand() {
     }
 
     /* Shows response to user */
-    char *buffer;
+    char *buffer, *c;
     int n, N;
-    char *c;
 
     buffer = strtok(response, " ");
     if (buffer == NULL || strcmp(buffer, "LTR")) {
@@ -327,6 +317,10 @@ void topicListCommand() {
         return;
     }
     buffer = strtok(NULL, " ");
+    if (buffer == NULL) {
+        printf("ERR\n");
+        return;
+    }
 
     N = (int) strtol(buffer, &i, 10);
     if (*i != '\0') {
@@ -338,9 +332,17 @@ void topicListCommand() {
         printf("Topic list (Number Topic UserID):\n");
         for(; n > 0; n--) {
             buffer = strtok(NULL, " ");
+            if (buffer == NULL) {
+                printf("ERR\n");
+                return;
+            }
             c = strchr(buffer, ':');
+            if (c == NULL) {
+                printf("ERR\n");
+                return;
+            }
             *c = ' ';
-            printf("%d. %s\n", N - n + 1, buffer);
+            printf("Topic %d. %s\n", N - n + 1, buffer);
         }
     }
     else {
@@ -358,22 +360,45 @@ void topicSelectCommand(char *command) {
 
     /* removes \n from end of string */
     c = strchr(topic, '\n');
+    if (c == NULL) {
+        printf("ERR\n");
+        return;
+    }
     *c = '\0';
+
+    if (topic == NULL || strlen(topic) == 0) {
+        printf("ERR\n");
+        return;
+    }
 
     strcpy(selectedTopic, topic);
     tIsSet = 1;
 
-    printf("%s\n", topic);
+    printf("Topic %s successfully selected\n", selectedTopic);
 
 }
 
 void topicProposeCommand(char *command) {
 
-    char message[BUFFER_SIZE], response[BUFFER_SIZE], *topic;
+    char message[BUFFER_SIZE], response[BUFFER_SIZE], *topic, *c;
     int responseSize;
 
     topic = strtok(NULL, " ");
-    sprintf(message, "PTP %s %s", userID, topic);
+
+    /* removes \n from end of string */
+    c = strchr(topic, '\n');
+    if (c == NULL) {
+        printf("ERR\n");
+        return;
+    }
+    *c = '\0';
+
+    if (topic == NULL || strlen(topic) == 0) {
+        printf("ERR\n");
+        return;
+    }
+
+    sprintf(message, "PTP %s %s\n", userID, topic);
 
     responseSize = sendMessageUDP(message, strlen(message), response, BUFFER_SIZE);
     if (responseSize == -1) {
@@ -395,15 +420,15 @@ void topicProposeCommand(char *command) {
 
     /* Shows response to user */
     if (!strcmp(response, "PTR OK")) {
-        printf("OK\n");
         strcpy(selectedTopic, topic);
         tIsSet = 1;
+        printf("New topic %s successufly submited\n", selectedTopic);
     }
     else if (!strcmp(response, "PTR DUP")){
-        printf("DUP\n");
+        printf("Topic %s already exists\n", topic);
     }
     else if (!strcmp(response, "PTR FUL")){
-        printf("FUL\n");
+        printf("Max number of topics reached\n");
     }
     else {
         printf("ERR\n");
@@ -413,10 +438,8 @@ void topicProposeCommand(char *command) {
 
 void questionListCommand() {
 
-    char message[BUFFER_SIZE];
-    char response[BUFFER_SIZE];
+    char message[BUFFER_SIZE], response[BUFFER_SIZE];
     int responseSize;
-    char *i;
 
     sprintf(message, "LQU %s\n", selectedTopic);
 
@@ -439,12 +462,19 @@ void questionListCommand() {
     }
 
     /* Shows response to user */
-    char *buffer;
-    int n, N;
-    char *c;
+    char *buffer, *c, *i;
+    int n, N, j;
 
-    strtok(response, " ");
+    buffer = strtok(response, " ");
+    if (strcmp(buffer, "LQR")) {
+        printf("ERR\n");
+        return;
+    }
     buffer = strtok(NULL, " ");
+    if (buffer == NULL) {
+        printf("ERR\n");
+        return;
+    }
     N = (int) strtol(buffer, &i, 10);
     if (*i != '\0') {
         printf("ERR\n");
@@ -455,46 +485,61 @@ void questionListCommand() {
         printf("Question list (Number UserID AvailableAnswers):\n");
         for(; n > 0; n--) {
             buffer = strtok(NULL, " ");
-            while ((c = strchr(buffer, ':')) != NULL) {
+            if (buffer == NULL) {
+                printf("ERR\n");
+                return;
+            }
+            for (j = 0; j < 2; j++) {
+                c = strchr(buffer, ':');
+                if (c == NULL) {
+                    printf("ERR\n");
+                    return;
+                }
                 *c = ' ';
             }
-            printf("%d. %s\n", n - n + 1, buffer);
+            printf("Question %d. %s\n", N - n + 1, buffer);
         }
     }
     else {
         printf("No questions available for selected topic\n");
     }
 
-
 }
 
 void questionGetCommand(char *command) {
-
-    /*  TODO ADD CLEANUP IN CASE OF FAILURE */
 
     char message[BUFFER_SIZE], *response, *question, *c, *i;
     int responseSize;
 
     question = strtok(NULL, " ");
-
+        
     /* removes \n from end of string */
     c = strchr(question, '\n');
+    if (c == NULL) {
+        printf("ERR\n");
+        return;
+    }
     *c = '\0';
 
-    sprintf(message, "GQU %s %s\n", selectedTopic, selectedQuestion);
+    if (question == NULL || strlen(question) == 0) {
+        printf("ERR\n");
+        return;
+    }
+
+    sprintf(message, "GQU %s %s\n", selectedTopic, question);
 
     response = sendMessageTCP(message, strlen(message), &responseSize);
     if (response == NULL) {
         return;
     }
     if (responseSize == 0) {
-        printf("ERR\n");
+        printf("QGR EOF\n");
         return;
     }
 
     /* checks for \n */
     if (response[responseSize - 1] != '\n') {
-        printf("ERR\n");
+        printf("QGR ERR\n");
         return;
     }
     else {
@@ -530,7 +575,7 @@ void questionGetCommand(char *command) {
     ps = ns;
 
     /* Processes a data block */
-    sprintf(qFileName, "%s/%s", selectedTopic, selectedQuestion);
+    sprintf(qFileName, "%s/%s", selectedTopic, question);
     if ((ps = handleDataBlock(ps + 1, response + responseSize - ps - 1, qFileName)) == NULL) {
         printf("QGR ERR\n");
         return;
@@ -547,6 +592,9 @@ void questionGetCommand(char *command) {
     }
     else {
         *ns = '\0';
+        if (strlen(ps + 1) == 0) {
+            printf("QGR ERR\n");
+        }
         N = (int) strtol(ps + 1, &i, 10);
         if (*i != '\0') {
             printf("QGR ERR\n");
@@ -565,6 +613,10 @@ void questionGetCommand(char *command) {
             return;
         }
         *ns = '\0';
+        if (strlen(ps + 1) == 0) {
+            printf("QGR ERR\n");
+            return;
+        }
         AN = (int) strtol(ps + 1, &i, 10);
         if (*i != '\0') {
             printf("QGR ERR\n");
@@ -572,7 +624,7 @@ void questionGetCommand(char *command) {
         }
         ps = ns;
         /* Processes a data block */
-        sprintf(aFileName, "%s/%s_%d", selectedTopic, selectedQuestion, AN);
+        sprintf(aFileName, "%s/%s_%d", selectedTopic, question, AN);
         if ((ps = handleDataBlock(ps + 1, response + responseSize - ps - 1, aFileName)) == NULL) {
             printf("QGR ERR\n");
             return;            
@@ -701,30 +753,31 @@ void questionSubmitCommand(char *command) {
 
     char *question, *response, *message;
     int responseSize;
+    long bufferSize;
 
     question = strtok(NULL, " ");
-    if (question == NULL) {
+    if (question == NULL || strlen(question) == 0) {
         printf("ERR\n");
         return;
     }
 
-    if ((message = submitAux("QUS", userID, selectedTopic, question)) == NULL) {
+    if ((message = submitAux("QUS", userID, selectedTopic, question, &bufferSize)) == NULL) {
         return;
     }
 
-    response = sendMessageTCP(message, strlen(message), &responseSize);
+    response = sendMessageTCP(message, bufferSize, &responseSize);
     free(message);
     if (response == NULL) {
         return;
     }
     if (responseSize == 0) {
-        printf("ERR\n");
+        printf("ERR1\n");
         return;
     }
 
     /* checks for \n */
     if (response[responseSize - 1] != '\n') {
-        printf("ERR\n");
+        printf("ERR2\n");
         return;
     }
     else {
@@ -733,18 +786,18 @@ void questionSubmitCommand(char *command) {
 
     /* Shows response to user */
     if (!strcmp(response, "QUR OK")) {
-        printf("OK\n");
         strcpy(selectedQuestion, question);
         qIsSet = 1;
+        printf("Question successfully added\n");
     }
     else if (!strcmp(response, "QUR DUP")){
-        printf("DUP\n");
+        printf("Question already exists\n");
     }
     else if (!strcmp(response, "QUR FUL")){
-        printf("FUL\n");
+        printf("Question list is full\n");
     }
     else {
-        printf("NOK\n");
+        printf("Unable to submit question\n");
     }
 
     free(response);
@@ -755,12 +808,13 @@ void answerSubmitCommand(char *command) {
 
     char *message, *response;
     int responseSize;
+    long bufferSize;
 
-    if ((message = submitAux("ANS", userID, selectedTopic, selectedQuestion)) == NULL) {
+    if ((message = submitAux("ANS", userID, selectedTopic, selectedQuestion, &bufferSize)) == NULL) {
         return;
     }
     
-    response = sendMessageTCP(message, strlen(message), &responseSize);
+    response = sendMessageTCP(message, bufferSize, &responseSize);
     free(message);
     if (response == NULL) {
         return;
@@ -780,41 +834,39 @@ void answerSubmitCommand(char *command) {
     }
 
     /* Shows response to user */
-    if (!strcmp(response, "NAS OK")) {
-        printf("OK\n");
+    if (!strcmp(response, "ANR OK")) {
+        printf("Answered successfully\n");
     }
     else if (!strcmp(response, "ANS FUL")){
-        printf("FUL\n");
+        printf("Answer list is full\n");
     }
     else {
-        printf("NOK\n");
+        printf("Unable to submit answer\n");
     }
 
     free(response);
 
 }
 
-/*  Recieves id topic question and "fileName\0[imageFile]\0" already strtok;
+/*  Recieves id topic question and "fileName\0[imageFile]\0"
     RETURNS: "type id topic question fSize fData IMG [iExt iSize iData]"
 */
-char* submitAux(char *type, char *id, char *topic, char *question) {
+char* submitAux(char *type, char *id, char *topic, char *question, long *bufferSize) {
 
     char *fileName, *fData, *imageFile, *iExt, *iData, *buffer, *c;
     int fSize = 0, iSize = 0, IMG = 0;
 
     fileName = strtok(NULL, " ");
-    if (fileName == NULL) {
+    if (fileName == NULL || strlen(fileName) == 0) {
         printf("ERR\n");
         return NULL;
     }
 
     /* removes \n from end of string */
     c = strchr(fileName, '\n');
-    if (c == NULL) {
-        printf("ERR\n");
-        return NULL;
+    if (c != NULL) {
+        *c = '\0';
     }
-    *c = '\0';
 
     /* Gets file data */
     FILE *f = fopen(fileName, "r");
@@ -826,32 +878,27 @@ char* submitAux(char *type, char *id, char *topic, char *question) {
     fSize = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    fData = (char*) malloc(fSize);
+    fData = (char*) malloc(fSize * sizeof(char) + 1);
     if (fData == NULL) {
         printf("ERROR: malloc\n");
         return NULL;
     }
     fread(fData, sizeof(char), fSize, f);
+    fData[fSize] = '\0';
+    fclose(f);
 
     /* Checks for image */
     if ((imageFile = strtok(NULL, " ")) != NULL) {
         IMG = 1;
-        FILE *i = fopen(imageFile, "r");
-        if (i == NULL) {
-            printf("ERROR: fopen\n");
+
+        /* removes \n from end of string */
+        c = strchr(imageFile, '\n');
+        if (c == NULL) {
+            printf("ERR\n");
             return NULL;
         }
-        fseek(i, 0, SEEK_END);
-        iSize = ftell(i);
-        fseek(i, 0, SEEK_SET);
-
-        iData = (char*) malloc(iSize);
-        if (iData == NULL) {
-            printf("ERROR: malloc\n");
-            return NULL;
-        }
-        fread(iData, sizeof(char), iSize, i);
-
+        *c = '\0';
+        
         c = strchr(imageFile, '.');
         if (c == NULL) {
             printf("ERR\n");
@@ -862,6 +909,23 @@ char* submitAux(char *type, char *id, char *topic, char *question) {
             printf("ERR\n");
             return NULL;
         }
+
+        FILE *i = fopen(imageFile, "rb");
+        if (i == NULL) {
+            printf("ERROR: fopen\n");
+            return NULL;
+        }
+        fseek(i, 0, SEEK_END);
+        iSize = ftell(i);
+        fseek(i, 0, SEEK_SET);
+
+        iData = (char*) malloc(iSize * sizeof(char));
+        if (iData == NULL) {
+            printf("ERROR: malloc\n");
+            return NULL;
+        }
+        fread(iData, sizeof(char), iSize, i);
+        fclose(i);
     }
     else {
         IMG = 0;
@@ -869,23 +933,32 @@ char* submitAux(char *type, char *id, char *topic, char *question) {
 
     /* Creates return string */
     if (IMG) {
-        buffer = (char*) malloc(sizeof(char)*(BUFFER_SIZE + fSize + iSize));
+        buffer = (char*) malloc(sizeof(char) * (BUFFER_SIZE + fSize + iSize));
         if (buffer == NULL) {
             printf("ERROR: malloc\n");
             return NULL;
         }
-        sprintf(buffer, "%s %s %s %s %d %s %d %s %d %s\n", type, id, topic, question, fSize, fData, IMG, iExt, iSize, iData);
+        sprintf(buffer, "%s %s %s %s %d %s %d %s %d ", type, id, topic, question, fSize, fData, IMG, iExt, iSize);
+        *bufferSize = strlen(buffer);
+        c = strchr(buffer, '\0');
+        if (c == NULL) {
+            return NULL;
+        }
+        memcpy(c, iData, iSize);
+        *(c + iSize) = '\n';
+        *bufferSize = *bufferSize + iSize + 1;
     }
     else {
         buffer = (char*) malloc(sizeof(char)*(BUFFER_SIZE + fSize));
         sprintf(buffer, "%s %s %s %s %d %s %d\n", type, id, topic, question, fSize, fData, IMG);
+        *bufferSize = strlen(buffer);
     }
 
     free(fData);
     if (IMG) {
         free(iData);
     }
-    free(buffer);
+
     return buffer;
 
 }
@@ -894,13 +967,11 @@ int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSi
     
     int n;
     
-    /*
     printf("Sending %d bytes and message: \"", mBufferSize);
     fflush(stdout);
     write(1, message, mBufferSize);
     printf("\"\n");
     fflush(stdout);
-    */
     /* Sends message */
     if ( (n =sendto(UDPfd, message, mBufferSize, 0, res->ai_addr, res->ai_addrlen)) == -1) {
         perror("ERROR: sendto\n");
@@ -912,13 +983,11 @@ int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSi
         perror("ERROR: recvfrom");
         return -1;
     }
-    /*
     printf("Recieved %d bytes and response: \"", n);
     fflush(stdout);
     write(1, response, n);
     printf("\"\n");
     fflush(stdout);
-    */
 
     return n;
 
@@ -932,13 +1001,11 @@ char* sendMessageTCP(char *message, int mBufferSize, int *responseSize) {
     *responseSize = 0;
 
     TCPfd = openTCP();
-    /*
     printf("Sending %d bytes and message: \"", mBufferSize);
     fflush(stdout);
     write(1, message, mBufferSize);
-    printf("\"");
+    printf("\"\n");
     fflush(stdout);
-    */
     /* Sends message */
     while (written < mBufferSize) {
         n = write(TCPfd, message + written, mBufferSize - written);
@@ -974,13 +1041,11 @@ char* sendMessageTCP(char *message, int mBufferSize, int *responseSize) {
         return NULL;
     }
     *responseSize -= left;
-    /*
     printf("Recieved %d bytes and response: \"", *responseSize);
     fflush(stdout);
     write(1, response, *responseSize);
-    printf("\"");
+    printf("\"\n");
     fflush(stdout);
-    */
 
     close(TCPfd);
 
