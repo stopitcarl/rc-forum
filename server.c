@@ -146,10 +146,13 @@ int openUDP()
     return fd;
 }
 
-/* Check if str has newLine at the end and if so, deletes it */
+// ######## START OF AUX FUNCTIONS ###########
+
+/* Check if str has newLine at the end of str and if so, deletes it */
 int deleteNewLine(char *str)
 {
     char *c;
+
     if ((c = strchr(str, '\n')) != NULL)
         *c = '\0';
 
@@ -221,13 +224,20 @@ int countTopics() {
 
     return count;
 }
+// ######## END OF AUX FUNCTIONS ###########
+
+
+// ######## START OF UDP COMMANDS ###########
 
 /*Performs register command and saves the reply in status*/
 void registerCommand(char *status)
 {
     char *type = strtok(NULL, " ");
 
-    if (strlen(type) == 6 && deleteNewLine(type))
+    char *i;
+    strtol(type, &i, 10);
+
+    if (strlen(type) == 6 && *i != '\0' && deleteNewLine(type))
     {
         strcpy(status, "RGR OK\n");
     }
@@ -346,7 +356,7 @@ void questionListCommand(char *response) {
     findTopic(topic, topicDir);
 
     if (topicDir[0] == '\0') {
-        strcpy(response, "LQR 0\n");
+        strcpy(response, "ERR\n");
         return;
     }
 
@@ -384,6 +394,17 @@ void questionListCommand(char *response) {
     }
 }
 
+// ######## END OF UDP COMMANDS ###########
+
+// ######## START OF TCP COMMANDS ###########
+
+void questionGetCommand(char * response){
+
+}
+
+// ######## END OF TCP COMMANDS ###########
+
+
 void handleCommand(char *request, char *response)
 {
     char *type;
@@ -411,7 +432,7 @@ void handleCommand(char *request, char *response)
     }
     else if (!strcmp(type, "GQU"))
     {
-        // questionGetCommand(command);
+        // questionGetCommand(response);
     }
     else if (!strcmp(type, "QUS"))
     {
