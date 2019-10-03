@@ -313,7 +313,7 @@ void topicListCommand() {
         return;
     }
     buffer = strtok(NULL, " ");
-    if (buffer == NULL) {
+    if (buffer == NULL || strlen(buffer) == 0) {
         printf("ERR\n");
         return;
     }
@@ -328,7 +328,7 @@ void topicListCommand() {
         printf("Topic list (Number Topic UserID):\n");
         for(; n > 0; n--) {
             buffer = strtok(NULL, " ");
-            if (buffer == NULL) {
+            if (buffer == NULL || strlen(buffer) == 0) {
                 printf("ERR\n");
                 return;
             }
@@ -477,7 +477,7 @@ void questionListCommand() {
         return;
     }
     buffer = strtok(NULL, " ");
-    if (buffer == NULL) {
+    if (buffer == NULL || strlen(buffer) == 0) {
         printf("ERR\n");
         return;
     }
@@ -765,6 +765,9 @@ char* handleFile(char *content, int cSize, char *fn) {
         return NULL;
     } 
     *p = '\0';
+    if (strlen(content) == 0) {
+        return NULL;
+    }
     size = strtol(content, &i, 10);
     if (*i != '\0') {
             return NULL;
@@ -879,12 +882,12 @@ void answerSubmitCommand(char *command) {
 
 }
 
-/*  Recieves id topic question and "fileName\0[imageFile]\0"
+/*  Recieves id topic question and "fileName\0[imageFile]\0"; uses strtok
     RETURNS: "type id topic question fSize fData IMG [iExt iSize iData]"
 */
 char* submitAux(char *type, char *id, char *topic, char *question, long *bufferSize) {
 
-    char *fileName, *fData, *imageFile, *iExt, *iData, *buffer, *c;
+    char *fileName, *fData, *imageFile, *iExt, *iData, *buffer, *c, fileNameExt[15];
     int fSize = 0, iSize = 0, IMG = 0;
 
     fileName = strtok(NULL, " ");
@@ -900,7 +903,9 @@ char* submitAux(char *type, char *id, char *topic, char *question, long *bufferS
     }
 
     /* Gets file data */
-    FILE *f = fopen(fileName, "r");
+    strcpy(fileNameExt, fileName);
+    strcat(fileNameExt, ".txt");
+    FILE *f = fopen(fileNameExt, "r");
     if (f == NULL) {
         printf("File does not exist\n");
         return NULL;
