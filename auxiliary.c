@@ -1,4 +1,4 @@
-#include "aux.h"
+#include "auxiliary.h"
 
 long toPositiveNum(char *s) {
 
@@ -144,7 +144,6 @@ int isAlphaNumeric(char *s) {
 
     while (s[i] != '\0') {
         if (!isalnum(s[i])) {
-            printf("%c\n", s[i]);
             return 0;
         }
         i++;
@@ -156,7 +155,7 @@ int isAlphaNumeric(char *s) {
 
 int endsWithNewLine(char *s, long size) {
 
-    if (s[size - 1] == '\n') {
+    if (s[size - 2] == '\n') {
         return 1;
     }
     else {
@@ -165,7 +164,7 @@ int endsWithNewLine(char *s, long size) {
 
 }
 
-void printTopicList(char **l, int size) {
+void printTopicList(char **l, long size) {
 
     int i;
 
@@ -176,7 +175,7 @@ void printTopicList(char **l, int size) {
 
 }
 
-void printQuestionList(char **l, int size) {
+void printQuestionList(char **l, long size) {
 
     int i;
 
@@ -186,7 +185,7 @@ void printQuestionList(char **l, int size) {
     }
 }
 
-int isInList(char *s, char **l, int size) {
+int isInList(char *s, char **l, long size) {
 
     int i;
 
@@ -202,16 +201,16 @@ int isInList(char *s, char **l, int size) {
 
 void cpyUntilSpace(char *dest, char *src) {
 
-    while (*src != ' ') {
+    while (*src != ' ' && *src != '\0') {
         *dest++ = *src++;
     }
+    *dest = '\0';
 
 }
 
-char **initList(int n, int size) {
+char **initList(int n) {
 
     char **l;
-    int i;
 
     l = (char**) malloc(sizeof(char*) * n);
     if (l == NULL) {
@@ -219,19 +218,11 @@ char **initList(int n, int size) {
         exit(EXIT_FAILURE);
     }
 
-    for (i = 0; i < n; i++) {
-        l[i] = (char*) malloc(sizeof(char) * size);
-        if (l[i] == NULL) {
-            perror("ERROR: malloc\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
     return l;
 
 }
 
-void freeList(char **l, int size) {
+void freeList(char **l, long size) {
 
     int i;
 

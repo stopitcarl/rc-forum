@@ -19,8 +19,10 @@
 #define TOPIC_SIZE 10
 #define QUESTION_SIZE 10
 #define ANSWER_SIZE 10
+#define EXTENSION_SIZE 3
 #define DEFAULT_PORT 58044
 #define MAX_TOPICS 99
+#define MAX_ANSWERS 10
 
 /*  Turns a string into a number
     returns number or -1 in case of error */
@@ -30,9 +32,9 @@ long toPositiveNum(char *s);
     returns ID or -1 in case of error */
 long getUserID(char *s);
 
-/*  Null terminates the curent arg and returns a pointer to the next one;
-    l defines length of the argument;
-    Does basic error checks; */
+/*  Null terminates the curent arg and returns a pointer to the next one
+    l defines length of the argument
+    Does basic error checks */
 char *getNextArg(char *s, char c, long l);
 
 /*  Replaces last occurence of new line character of string s with '\0'
@@ -75,17 +77,17 @@ int endsWithNewLine(char *s, long size);
 void cpyUntilSpace(char *dest, char *src);
 
 /*  Prints topics in list format */
-void printTopicList(char **l, int size);
+void printTopicList(char **l, long size);
 
 /*  Prints questions in list format */
-void printQuestionList(char **l, int size);
+void printQuestionList(char **l, long size);
 
 /*  Checks if s is in list l
     return 1 in case of success */
-int isInList(char *s, char **l, int size);
+int isInList(char *s, char **l, long size);
 
-/* Allocate list l whit n elements of size size */
-char **initList(int n, int size);
+/* Allocate list l with n char* */
+char **initList(int n);
 
 /* Frees list */
-void freeList(char **l, int size);
+void freeList(char **l, long size);

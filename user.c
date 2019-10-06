@@ -3,14 +3,15 @@
     2. same whit LQR
 
     TODO:
-    1. THINK OF A SMARTER WAY OF LEADING WITH TOPIC AND QUESTION LISTS
+    1. CALCULATE SIZE NEEDED FOR RESPONSE AND FOR MESSAGE
+    2. VERIFICAR SE QUANDO ACABEI DE DAR PARSE NOS ARGUMENTOS AINDA HA MAIS LIXO
 */
 
-#include "aux.h"
+#include "auxiliary.h"
 
-/************************************************
- * VARIAVEIS GLOBAIS
- * *********************************************/
+/*******************************************************************************
+ * GLOBAL VARIABLES
+ * ****************************************************************************/
 
 char FShost[HOST_NAME_MAX];
 char FSport[MAX_PORT_SIZE + 1];
@@ -31,11 +32,11 @@ int qIsSet = 0;
 char **topicList;
 int tlSize = 0;
 char **questionList;
-int qlSize = 0;
+long qlSize = 0;
 
-/************************************************
- * DECLARACOES
- * *********************************************/
+/*******************************************************************************
+ * DECLARATIONS
+ * ****************************************************************************/
 
 int openUDP();
 int openTCP();
@@ -46,7 +47,7 @@ void topicSelectCommand(char *command, int flag);
 void topicProposeCommand(char *command);
 void questionListCommand();
 void questionGetCommand(char *command, int flag);
-char* handleDataBlock(char *content, int cSize, char *fn);
+char* parseDataBlock(char *content, long cSize, char *fn);
 char* handleFile(char *content, int cSize, char *fn);
 char* handleImage(char *content, int cSize, char *fn);
 void questionSubmitCommand(char *command);
@@ -55,9 +56,9 @@ char* submitAux(char *type, char *userID, char *topic, char *question, long *buf
 int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSize);
 char* sendMessageTCP(char *message, long mBufferSize, long *responseSize);
 
-/*************************************************************
- * CODIGO
- *************************************************************/
+/*******************************************************************************
+ * CODE
+ * ****************************************************************************/
 
 int main(int argc, char *argv[]) {
 
@@ -133,12 +134,30 @@ int main(int argc, char *argv[]) {
                 printf("No topic selected\n");
             }
         }
-        else if (!strcmp(command, "question_get") || !strcmp(command, "qg")) {
-            if (tIsSet) {
-                //questionGetCommand(nextArg);
+        else if (!strcmp(command, "question_get")) {
+            if (tIsSet && qlSize > 0) {
+                questionGetCommand(nextArg, 0);
             }
             else {
-                printf("No topic selected\n");
+                if (!tIsSet) {
+                    printf("No topic selected\n");
+                }
+                if (!(qlSize > 0)) {
+                    printf("No question list available\n");
+                }
+            }
+        }
+        else if (!strcmp(command, "qg")) {
+            if (tIsSet && qlSize > 0) {
+                questionGetCommand(nextArg, 1);
+            }
+            else {
+                if (!tIsSet) {
+                    printf("No topic selected\n");
+                }
+                if (!(qlSize > 0)) {
+                    printf("No question list available\n");
+                }
             }
         }
         else if (!strcmp(command, "question_submit") || !strcmp(command, "qs")) {
@@ -179,7 +198,7 @@ int main(int argc, char *argv[]) {
         freeList(topicList, tlSize);
     }
     if (qlSize > 0) {
-    freeList(questionList, qlSize);
+        freeList(questionList, qlSize);
     }
 
     freeaddrinfo(res);
@@ -252,9 +271,9 @@ int openTCP() {
     return fd;
 }
 
-/*************************************************************
+/*******************************************************************************
  * COMMANDS
- *************************************************************/
+ * ****************************************************************************/
 
 void registerCommand(char *command) {
 
@@ -285,7 +304,7 @@ void registerCommand(char *command) {
         return;
     }
 
-    /* Deletes '\n' */
+    /* Deletes new line character */
     if (deleteNewLine(response)) {
         printf("ERR\n");
         return;
@@ -320,55 +339,56 @@ void topicListCommand() {
 
     /* Checks if response is valid */
     if (!isValidResponse(response, responseSize)) {
-        printf("ERR\n");
+        printf("ERR1\n");
         return;
     }
 
     /* replaces end of line char with space */
     if (replaceNewLine(response, ' ')) {
-        printf("ERR\n");
+        printf("ERR2\n");
         return;
     }
 
     /* Shows response to user */
     char *arg, *nextArg, *topic;
     int N, i;
-    long ID;
+    long ID, IDLength, topicLength;
 
     /* Checks for LTR */
     if ((nextArg = getNextArg(response, ' ', -1)) == NULL) {
-        printf("ERR\n");
+        printf("ERR3\n");
         return;
     }
     if (strcmp(response, "LTR")) {
-        printf("ERR\n");
+        printf("ERR4\n");
         return;
     }
     arg = nextArg;
 
     /* Gets N */
     if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
-        printf("ERR\n");
+        printf("ERR5\n");
         return;
     }
 
     /* Turns it into a number */
     if ((N = (int) toPositiveNum(arg)) == -1) {
-        printf("ERR\n");
+        printf("ERR6\n");
         return;
     }
 
     /* Checks if number is valid */
     if (N > MAX_TOPICS) {
-        printf("ERR\n");
+        printf("ERR7\n");
         return;
     }
 
     /* Allocates topic list */
     if (tlSize > 0) {
         freeList(topicList, tlSize);
+        tlSize = 0;
     }
-    topicList = initList(N, TOPIC_SIZE + ID_SIZE + 2);
+    topicList = initList(N);
     arg = nextArg;
 
     /* Processes every topic */
@@ -380,36 +400,42 @@ void topicListCommand() {
             /* Gets topic */
             if ((nextArg = getNextArg(arg, ':', -1)) == NULL) {
                 freeList(topicList, tlSize);
-                printf("ERR\n");
+                tlSize = 0;
+                printf("ERR8\n");
                 return;
             }
             if (!isValidTopic(arg)) {
                 freeList(topicList, tlSize);
-                printf("ERR\n");
+                tlSize = 0;
+                printf("ERR9\n");
                 return;
             }
             topic = arg;
+            topicLength = nextArg - arg;
             arg = nextArg;
 
             /* Gets userID */
             if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
                 freeList(topicList, tlSize); 
-                printf("ERR\n");
+                tlSize = 0;
+                printf("ERR10\n");
                 return;
             }
             if ((ID = getUserID(arg)) == -1) {
                 freeList(topicList, tlSize);
-                printf("ERR\n");
+                tlSize = 0;
+                printf("ERR11\n");
                 return;
             }
+            IDLength = nextArg - arg;
             arg = nextArg;
 
-            /* Saves topic in topic list */
+            /* Allocates and saves topic in topic list */
+            topicList[N - i] = (char*) malloc(sizeof(char) * (topicLength + IDLength + 2));
             sprintf(topicList[N - i], "%s %ld", topic, ID);
+            tlSize++;
 
         }
-
-        tlSize = N;
 
         /* Prints list of topics */
         printTopicList(topicList, tlSize);
@@ -423,7 +449,6 @@ void topicListCommand() {
 
 void topicSelectCommand(char *command, int flag) {
 
-    char *topic;
     int number;
 
     /* removes \n from end of string */
@@ -434,10 +459,14 @@ void topicSelectCommand(char *command, int flag) {
 
     /* short form ts */
     if (flag) {
-        if ((number = toPositiveNum(command)) == -1) {
+
+        /* Gtes topic number */
+        if ((number = (int) toPositiveNum(command)) == -1) {
             printf("Invalid topic number\n");
             return;
         }
+
+        /* Checks if its valid */
         if (number == 0 || number > tlSize) {
             printf("Invalid topic number\n");
             return;
@@ -447,20 +476,19 @@ void topicSelectCommand(char *command, int flag) {
 
     /* long form topic_select */
     else {
-        topic = command;
 
         /* Checks if its a valid topic */
-        if (!isValidTopic(topic)) {
+        if (!isValidTopic(command)) {
             printf("Invalid topic name\n");
             return;
         }
 
         /* Checks if topic is in list */
-        if (!isInList(topic, topicList, tlSize)) {
-            printf("Topic not on topic list\n");
+        if (!isInList(command, topicList, tlSize)) {
+            printf("Topic not in topic list\n");
             return;
         }
-        strcpy(selectedTopic, topic);
+        strcpy(selectedTopic, command);
     }
 
     tIsSet = 1;
@@ -497,7 +525,7 @@ void topicProposeCommand(char *command) {
         return;
     }
 
-    /* Deletes '\n' */
+    /* Deletes new line character */
     if (deleteNewLine(response)) {
         printf("ERR\n");
         return;
@@ -505,6 +533,8 @@ void topicProposeCommand(char *command) {
 
     /* Shows response to user */
     if (!strcmp(response, "PTR OK")) {
+
+        /* Upsates selected topic in case of success */
         strcpy(selectedTopic, command);
         tIsSet = 1;
         printf("New topic %s successufly submited\n", selectedTopic);
@@ -545,7 +575,7 @@ void questionListCommand() {
 
     /* Shows response to user */
     char *arg, *nextArg, *question;
-    long ID, NA, i, N;
+    long ID, NA, i, N, questionLength, IDLength, NALength;
 
     /* Checks for LQR */
     if ((nextArg = getNextArg(response, ' ', -1)) == NULL) {
@@ -572,8 +602,9 @@ void questionListCommand() {
     /* Allocates topic list */
     if (qlSize > 0) {
         freeList(questionList, qlSize);
+        qlSize = 0;
     }
-    questionList = initList(N, TOPIC_SIZE + ID_SIZE + 10 + 3); /* hoping NA is no more than 10 characters long*/
+    questionList = initList(N);
     arg = nextArg;
 
     /* Processes every question */
@@ -585,48 +616,58 @@ void questionListCommand() {
             /* Gets question */
             if ((nextArg = getNextArg(arg, ':', -1)) == NULL) {
                 freeList(questionList, qlSize);
+                qlSize = 0;
                 printf("ERR\n");
                 return;
             }
             if (!isValidQuestion(arg)) {
                 freeList(questionList, qlSize);
+                qlSize = 0;
                 printf("ERR\n");
                 return;
             }
             question = arg;
+            questionLength = nextArg - arg;
             arg = nextArg;
 
             /* Gets userID */
             if ((nextArg = getNextArg(arg, ':', -1)) == NULL) {
                 freeList(questionList, qlSize);
+                qlSize = 0;
                 printf("ERR\n");
                 return;
             }
             if ((ID = getUserID(arg)) == -1) {
                 freeList(questionList, qlSize);
+                qlSize = 0;
                 printf("ERR\n");
                 return;
             }
+            IDLength = nextArg - arg;
             arg = nextArg;
 
             /* Gets number of answers */
             if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
                 freeList(questionList, qlSize);
+                qlSize = 0;
                 printf("ERR\n");
                 return;
             }
             if ((NA = toPositiveNum(arg)) == -1) {
                 freeList(questionList, qlSize);
+                qlSize = 0;
+                printf("ERR\n");
                 return;
             }
+            NALength = nextArg - arg;
             arg = nextArg;
 
             /* Saves question in question list */
+            questionList[N - i] = (char*) malloc(sizeof(char) * (questionLength + IDLength + NALength + 3));
             sprintf(questionList[N - i], "%s %ld %ld", question, ID, NA);
+            qlSize++;
         
         }
-
-        qlSize = N;
 
         /* Prints list of topics */
         printQuestionList(questionList, qlSize);
@@ -638,10 +679,302 @@ void questionListCommand() {
 
 }
 
-/*************************************************************
- * COMMUNICATION
- *************************************************************/
+void questionGetCommand(char *command, int flag) {
+    
+    char message[BUFFER_SIZE], *response, question[QUESTION_SIZE + 1];
+    long responseSize, number;
 
+    /* Deletes new line character */
+    if (deleteNewLine(command)) {
+        printf("ERR\n");
+        return;
+    }
+
+    /* short form qg */
+    if (flag) {
+
+        /* Gets question number */
+        if ((number = toPositiveNum(command)) == -1) {
+            printf("Invalid question number\n");
+            return;
+        }
+
+        /* Checks if its valid */
+        if (number == 0 || number > qlSize) {
+            printf("Invalid question number\n");
+            return;
+        }
+        cpyUntilSpace(question, questionList[number - 1]);
+        sprintf(message, "GQU %s %s\n", selectedTopic, question);
+    }
+
+    /* long form question_get */
+    else {
+
+        /* Checks if its a valid question */
+        if (!isValidQuestion(command)) {
+            printf("Invalid question name\n");
+            return;
+        }
+
+        /* Checks if question is in list */
+        if (!isInList(command, questionList, qlSize)) {
+            printf("Question not in question list\n");
+            return;
+        }
+        strcpy(question, command);
+        sprintf(message, "GQU %s %s\n", selectedTopic, question);
+    }
+
+    response = sendMessageTCP(message, strlen(message), &responseSize);
+
+    /* Checks if its a valid response */
+    if (!isValidResponse(response, responseSize)) {
+        free(response);
+        printf("ERR1\n");
+        return;
+    }
+
+    /* Checks for special responses */
+    if (!strcmp(response, "QGR EOF\n")) {
+        free(response);
+        printf("Request can not be answered\n");
+        return;
+    }
+    if (!strcmp(response, "QGU ERR\n")) {
+        free(response);
+        printf("Somehow QGU request was not correctly formulated\n");
+        return;
+    }
+
+    /* Replaces new line character with space (cant use replaceNewLine because files may contain '\0') */
+    response[responseSize - 2] = ' ';
+
+    /* Shows response to user */
+    char *arg, *nextArg, qFileName[QUESTION_SIZE + TOPIC_SIZE + 2], aFileName[QUESTION_SIZE + TOPIC_SIZE + 5];
+    int N, AN;
+
+    /* Creates dir to store files in */
+    if (mkdir(selectedTopic, 0777) == -1) {
+        if (errno != EEXIST) {
+            perror("ERROR: mkdir\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    /* Gets QGR */
+    if ((nextArg = getNextArg(response, ' ', -1)) == NULL) {
+        free(response);
+        printf("ERR3\n");
+        return;
+    }
+    if (strcmp(response, "QGR")) {
+        free(response);
+        printf("ERR4\n");
+        return;
+    }
+    arg = nextArg;
+
+    /* Gets ID */
+    if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
+        free(response);
+        printf("ERR5\n");
+        return;
+    }
+    if (getUserID(arg) == -1) {
+        free(response);
+        printf("ERR6\n");
+        return;
+    }
+    arg = nextArg;
+
+    /* parses a Data Block */
+    sprintf(qFileName, "%s/%s", selectedTopic, question);
+    if ((arg = parseDataBlock(arg, responseSize - (arg - response), qFileName)) == NULL) {
+        free(response);
+        printf("ERR7\n");
+        return;
+    }
+
+    /* Gets number of answers */
+    if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
+        free(response);
+        printf("ERR8\n");
+        return;
+    }
+    if ((N = toPositiveNum(arg)) == - 1) {
+        free(response);
+        printf("ERR9\n");
+        return;
+    }
+
+    /* Only a maximum of 10 answers can be sent */
+    if (N > 10) {
+        free(response);
+        printf("ERR10\n");
+        return;
+    }
+    arg = nextArg;
+    
+    /* Starts processing each answer */
+    for (; N > 0; N--) {
+
+        /* Gets answer number */
+        if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
+            free(response);
+            printf("ERR11\n");
+            return;
+        }
+        if ((AN = toPositiveNum(arg)) == -1) {
+            free(response);
+            printf("ERR12\n");
+            return;
+        }
+        if (AN > 10) {
+            free(response);
+            printf("ERR13\n");
+            return;
+        }
+        arg = nextArg;
+
+        /* Gets ID */
+        if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
+            free(response);
+            printf("ERR14\n");
+            return;
+        }
+        if (getUserID(arg) == -1) {
+            free(response);
+            printf("ERR15\n");
+            return;
+        }
+        arg = nextArg;
+
+        /* Processes Data Block */
+        sprintf(aFileName, "%s/%s_%d", selectedTopic, question, AN);
+        if ((arg = parseDataBlock(arg, responseSize - (arg - response), aFileName)) == NULL) {
+            free(response);
+            printf("ERR16\n");
+            return;
+        }
+
+    }
+
+    /* Selects question as localy active question */
+    strcpy(selectedQuestion, question);
+
+    free(response);
+
+}
+
+/*  Parses a Data Block consisting of "fSize fData IMG [iExt iSize iData]"
+    content must be null terminated and have a space before null terminator
+    fn is the name of the file where data is going to be stored in
+    function handles extensions (file assumed to be .txt)
+    returns a pointer to end of string or null in case of insuccess */
+char* parseDataBlock(char *content, long cSize, char *fn) {
+
+    char *arg, *nextArg, fileName[TOPIC_SIZE + QUESTION_SIZE + 6];
+    int IMG;
+
+    /* Handles "fSize fData" */
+    sprintf(fileName, "%s.txt", fn);
+    if ((arg = handleFile(content, cSize, fileName)) == NULL) {
+        printf("1");
+        return NULL;
+    }
+
+    /* Checks if there is an image */
+    if ((nextArg = getNextArg(arg, ' ', 1)) == NULL) {
+        printf("2");
+        return NULL;
+    } 
+    if ((IMG = (int) toPositiveNum(arg)) == -1) {
+        printf("3");
+        return NULL;
+    }
+
+    /* Checks if IMG is a binary flag */
+    if (IMG < 0 || IMG > 1) {
+        printf("4");
+        return NULL;
+    }
+    arg = nextArg;
+
+    /* There is an image */
+    if (IMG) {
+
+        /* Handles "iExt iSize iData" */
+        if ((nextArg = handleImage(arg, cSize - (nextArg - content), fn)) == NULL) {
+            printf("5");
+            return NULL;
+        }
+    }
+        
+    return nextArg;
+
+}
+
+/*  Handles the image portion of the Data Block "ext size data"
+    return a pointer to end of portion or null in case of insuccess */
+char* handleImage(char *content, int cSize, char *fn) {
+
+    char *nextArg, imageName[strlen(fn) + EXTENSION_SIZE + 2];
+
+    /* Gets image extension */
+    if ((nextArg = getNextArg(content, ' ', EXTENSION_SIZE)) == NULL) {
+        return NULL;
+    }
+    sprintf(imageName, "%s.%s", fn, content);
+
+    /* Handles "size data" */
+    if ((nextArg = handleFile(nextArg, cSize - (nextArg - content), imageName)) == NULL) {
+        return NULL;
+    }
+
+    return nextArg;
+
+}
+
+/*  Handles the file portion of the Data Block "size data"
+    returns a pointer to end of portion or null in case of insucess */
+char* handleFile(char *content, int cSize, char *fn) {
+
+    char *nextArg;
+    long size;
+
+    /* Gets size of data */
+    if ((nextArg = getNextArg(content, ' ', -1)) == NULL) {
+        return NULL;
+    }
+    if ((size = toPositiveNum(content)) == -1) {
+        return NULL;
+    }
+
+    /* Checks if size isnt greater than space left on the buffer */
+    if (nextArg + size > content + cSize - 1) {
+        return NULL;
+    }
+
+    /* Stores data in file */
+    FILE *f = fopen(fn, "w");
+    if (f == NULL) {
+        perror("ERROR: fopen\n");
+        exit(EXIT_FAILURE);
+    }
+    fwrite(nextArg, sizeof(char), size, f);
+    fclose(f);
+
+    return nextArg + size + 1;
+
+}
+
+/*******************************************************************************
+ * COMMUNICATION
+ * ****************************************************************************/
+
+/*  returns size of data read
+    null terminates response */
 int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSize) {
     
     int n;
@@ -662,16 +995,22 @@ int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSi
         perror("ERROR: recvfrom");
         exit(EXIT_FAILURE);
     }
-    printf("Recieved %d bytes and response: \"", n);
-    fflush(stdout);
-    write(1, response, n);
-    printf("\"\n");
-    fflush(stdout);
+    /* Null terminates response */
+    if (n < rBufferSize) {
+        response[n] = '\0';
+        n++;
+    }
+    else {
+        response[n - 1] = '\0';
+    }
+    printf("Recieved %d bytes and response: \"%s\"\n", n - 1, response);
 
     return n;
 
 }
 
+/*  returns null terminated response
+    stores amount of data read in responseSize */
 char* sendMessageTCP(char *message, long mBufferSize, long *responseSize) {
 
     char *response;
@@ -718,14 +1057,30 @@ char* sendMessageTCP(char *message, long mBufferSize, long *responseSize) {
         perror("ERROR: read\n");
         exit(EXIT_FAILURE);
     }
+
+    write(1, response, *responseSize - left);
+
+    /* Null terminates reponse */
+    if (left == 0) {
+        printf("aaaaaaa\n");
+        left = BUFFER_SIZE;
+        *responseSize += BUFFER_SIZE;
+        if((response = (char *) realloc(response, *responseSize)) == NULL) {
+            perror("ERROR: realloc\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+    *(response + *responseSize - left) = '\0';
+    left--;
     *responseSize -= left;
-    printf("Recieved %ld bytes and response: \"", *responseSize);
+
+    close(TCPfd);
+
+    printf("Recieved %ld bytes and response: \"", *responseSize - 1);
     fflush(stdout);
     write(1, response, *responseSize);
     printf("\"\n");
     fflush(stdout);
-
-    close(TCPfd);
 
     return response;
 
