@@ -13,6 +13,7 @@
 #include <sys/wait.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include "auxiliary.h"
 
 #define PORT "58044"
 #define BUFFER_SIZE 1024
@@ -148,7 +149,7 @@ int openUDP()
 
 // ######## START OF AUX FUNCTIONS ###########
 
-/* Check if str has newLine at the end of str and if so, deletes it */
+/* Check if str has newLine at the end of str and if so, deletes it
 int deleteNewLine(char *str)
 {
     char *c;
@@ -157,7 +158,7 @@ int deleteNewLine(char *str)
         *c = '\0';
 
     return c != NULL;
-}
+}*/
 
 int countQuestions(char *dirName) {
     DIR *dir;
@@ -230,14 +231,16 @@ int countTopics() {
 // ######## START OF UDP COMMANDS ###########
 
 /*Performs register command and saves the reply in status*/
-void registerCommand(char *status)
+void registerCommand(char *id, char *status)
 {
-    char *type = strtok(NULL, " ");
+    char *arg = getNextArg(id, ' ', -1);
 
-    char *i;
-    strtol(type, &i, 10);
+    if (arg != NULL) {
+        strcpy(status, "RGR NOK\n");
+        return;
+    }
 
-    if (strlen(type) == 6 && *i != '\0' && deleteNewLine(type))
+    if (isValidID(id))
     {
         strcpy(status, "RGR OK\n");
     }
@@ -250,6 +253,7 @@ void topicListCommand(char *response) {
     DIR *dir;
     struct dirent *entry;
     char topics[99 * (TOPIC_LEN + 1)];
+    char *fp;
 
     topics[0] = '\0';
 
@@ -263,6 +267,8 @@ void topicListCommand(char *response) {
             if (entry->d_name[0] == '.')
                 continue;
             strcat(topics, " ");
+            fp = strchr(entry->d_name, '-');
+            if (fp != NULL) *fp = ':';
             strcat(topics, entry->d_name);
         }
     }
@@ -293,7 +299,7 @@ void findTopic(char *topic, char *dirName) {
                 continue;
 
             strcpy(aux, entry->d_name);
-            name = strtok(aux, ":");
+            name = strtok(aux, "-");
             if (!strcmp(topic, name)) {
                 strcpy(dirName, entry->d_name);
                 return;
@@ -307,18 +313,30 @@ void findTopic(char *topic, char *dirName) {
 }
 
 /*Proposes topic to the forum*/
-void topicProposeCommand(char *response) {
-    char *userID = strtok(NULL, " ");
-    char *topic = strtok(NULL, " ");
+void topicProposeCommand(char *id, char *response) {
+    char *topic, *lastArg;
     char dirName[TOPIC_LEN + 8];
     char testTopic[TOPIC_LEN];
     int n;
 
-    deleteNewLine(topic);
+    topic = getNextArg(id, ' ', -1);
+
+    if (topic == NULL) {
+        strcpy(response, "PTR NOK\n");
+        return;
+    }
+
+    lastArg = getNextArg(topic, ' ', -1);
+
+    if (lastArg != NULL) {
+        strcpy(response, "PTR NOK\n");
+        return;
+    }
+
     findTopic(topic, testTopic);
 
     /*Checks if id and topic are correct*/
-    if (strlen(userID) != 5 || strlen(topic) > 10) {
+    if (!isValidID(id) || !isValidTopic(topic)) {
         strcpy(response, "PTR NOK\n");
         return;
     } else if (nTopics == 99) {
@@ -329,7 +347,7 @@ void topicProposeCommand(char *response) {
         return;
     }
 
-    sprintf(dirName, "topics/%s:%s", topic, userID);
+    sprintf(dirName, "topics/%s-%s", topic, id);
 
     /*Creates topic in directory*/
     if ((n = mkdir(dirName, 0777)) == -1) {
@@ -341,18 +359,23 @@ void topicProposeCommand(char *response) {
 }
 
 /*Lists questions in a certain topic*/
-void questionListCommand(char *response) {
+void questionListCommand(char *topic, char *response) {
     DIR *dir;
     struct dirent *entry;
-    char *topic = strtok(NULL, " ");
     char topicDir[TOPIC_LEN];
     char dirName[TOPIC_LEN + 8];
     char questions[99 * (QUESTION_LEN + 1)];
+    char *fp;
     int nQuestions;
+    char *lastArg = getNextArg(topic, ' ', -1);
+
+    if (lastArg != NULL) {
+        strcpy(response, "ERR\n");
+        return;
+    }
 
     questions[0] = '\0';
 
-    deleteNewLine(topic);
     findTopic(topic, topicDir);
 
     if (topicDir[0] == '\0') {
@@ -373,10 +396,11 @@ void questionListCommand(char *response) {
         if (entry->d_type == DT_REG) {
             if (strchr(entry->d_name, '_') == NULL) {
                 int nAnswers = countAnswers(dirName, entry->d_name);
-                printf("answers: %d\n", nAnswers);
                 char answerString[2];
                 sprintf(answerString, "%d", nAnswers);
                 strcat(questions, " ");
+                fp = strchr(entry->d_name, '-');
+                if (fp != NULL) *fp = ':';
                 strcat(questions, strtok(entry->d_name, "."));
                 strcat(questions, ":");
                 strcat(questions, answerString);
@@ -407,37 +431,43 @@ void questionGetCommand(char * response){
 
 void handleCommand(char *request, char *response)
 {
-    char *type;
+    char *arg;
+
+    if (deleteNewLine(request)) {
+        strcpy(response, "ERR\n");
+        return;
+    }
+
 
     /* Gets command name */
-    type = strtok(request, " ");
+    arg = getNextArg(request, ' ', -1);
 
     /* Checks for command type */
     // TODO: implement commented funtions
-    if (!strcmp(type, "REG"))
+    if (!strcmp(request, "REG"))
     {
-        registerCommand(response);
+        registerCommand(arg, response);
     }
-    else if (!strcmp(request, "LTP\n"))
+    else if (!strcmp(request, "LTP"))
     {
         topicListCommand(response);
     }
-    else if (!strcmp(type, "PTP"))
+    else if (!strcmp(request, "PTP"))
     {
-        topicProposeCommand(response);
+        topicProposeCommand(arg, response);
     }
-    else if (!strcmp(type, "LQU"))
+    else if (!strcmp(request, "LQU"))
     {
-        questionListCommand(response);
+        questionListCommand(arg, response);
     }
-    else if (!strcmp(type, "GQU"))
+    else if (!strcmp(request, "GQU"))
     {
         // questionGetCommand(response);
     }
-    else if (!strcmp(type, "QUS"))
+    else if (!strcmp(request, "QUS"))
     {
     }
-    else if (!strcmp(type, "ANS"))
+    else if (!strcmp(request, "ANS"))
     {
     }
     else

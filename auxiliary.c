@@ -36,7 +36,7 @@ char *getNextArg(char *s, char c, long l) {
 
     p = strchr(s, c);
 
-    /* tests for end of string */ 
+    /* tests for end of string */
     if (p == NULL) {
         return NULL;
     }
@@ -47,7 +47,7 @@ char *getNextArg(char *s, char c, long l) {
     if (strlen(s) == 0 || (l > 0 && p - s != l)) {
         return NULL;
     }
-        
+
     return p + 1;
 
 }
@@ -79,7 +79,7 @@ int replaceNewLine(char *s, char c) {
         *p = c;
         return 0;
     }
-  
+
 
 }
 
@@ -90,7 +90,7 @@ int isValidResponse(char *s, long size) {
     }
     else {
         return 1;
-    } 
+    }
 
 }
 
@@ -102,7 +102,7 @@ int isValidID(char *s) {
     else {
         return 0;
     }
-    
+
 }
 
 int isValidAnswer(char *s) {
@@ -113,7 +113,7 @@ int isValidAnswer(char *s) {
     else {
         return 0;
     }
-    
+
 }
 
 int isValidQuestion(char *s) {
@@ -124,11 +124,10 @@ int isValidQuestion(char *s) {
     else {
         return 0;
     }
-    
+
 }
 
 int isValidTopic(char *s) {
-
     if (strlen(s) <= TOPIC_SIZE && strlen(s) > 0 && isAlphaNumeric(s)) {
         return 1;
     }
@@ -148,7 +147,7 @@ int isAlphaNumeric(char *s) {
         }
         i++;
     }
-    
+
     return 1;
 
 }
