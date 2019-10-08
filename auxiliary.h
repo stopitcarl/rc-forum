@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <limits.h>
 #include <ctype.h>
+#include <math.h>
 
 #define BUFFER_SIZE 1024
 #define MAX_PORT_SIZE 10
@@ -23,6 +24,7 @@
 #define DEFAULT_PORT 58044
 #define MAX_TOPICS 99
 #define MAX_ANSWERS 10
+#define MAX_FILE_SIZE 9999999999
 
 /*  Turns a string into a number
     returns number or -1 in case of error */
@@ -91,3 +93,29 @@ char **initList(int n);
 
 /* Frees list */
 void freeList(char **l, long size);
+
+/*  Parses a Data Block consisting of "fSize fData IMG [iExt iSize iData]"
+    content must be null terminated and have a space before null terminator
+    fn is the name of the file where data is going to be stored in
+    function handles extensions (file assumed to be .txt)
+    returns a pointer to end of string or null in case of failure */
+char* parseDataBlock(char *content, long cSize, char *fn);
+
+/*  Handles the image portion of the Data Block "ext size data"
+    return a pointer to end of portion or null in case of failure */
+char* handleFile(char *content, int cSize, char *fn);
+
+/*  Handles the file portion of the Data Block "size data"
+    returns a pointer to end of portion or null in case of failure */
+char* handleImage(char *content, int cSize, char *fn);
+
+/*  Composes a Data Block consisting of "fSize fData IMG [iExt iSize iData]"
+    fn is assumed to be .txt and in must include extension
+    stores data block size in size
+    returns a pointer to null terminated Data Block or null in case of failure */
+char* createDataBlock(char *fn, int IMG, char *in, long *size);
+
+/*  Recieves a file and returns the data in it
+    size stores the size of data
+    returns NULL in case of failure */
+char* readFromFile(char *fn, long *size);

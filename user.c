@@ -1,10 +1,8 @@
-/*  Perguntar ao prof:
-    1. LTR o ultimo (topic:userID )* nao leva espaço
-    2. same whit LQR
-
+/* 
     TODO:
     1. CALCULATE SIZE NEEDED FOR RESPONSE AND FOR MESSAGE
     2. VERIFICAR SE QUANDO ACABEI DE DAR PARSE NOS ARGUMENTOS AINDA HA MAIS LIXO
+    3. FAZER UNS TESTES COM FICHEIROS VAZIOS
 */
 
 #include "auxiliary.h"
@@ -47,12 +45,8 @@ void topicSelectCommand(char *command, int flag);
 void topicProposeCommand(char *command);
 void questionListCommand();
 void questionGetCommand(char *command, int flag);
-char* parseDataBlock(char *content, long cSize, char *fn);
-char* handleFile(char *content, int cSize, char *fn);
-char* handleImage(char *content, int cSize, char *fn);
 void questionSubmitCommand(char *command);
 void answerSubmitCommand(char *command);
-char* submitAux(char *type, char *userID, char *topic, char *question, long *bufferSize);
 int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSize);
 char* sendMessageTCP(char *message, long mBufferSize, long *responseSize);
 
@@ -70,7 +64,7 @@ int main(int argc, char *argv[]) {
 
     /* Initializes default variables */
     sprintf(FSport, "%d", DEFAULT_PORT);
-    if(gethostname(FShost, 100)) {
+    if(gethostname(FShost, HOST_NAME_MAX)) {
         perror("ERROR: gethostname\n");
         exit(EXIT_FAILURE);
     }
@@ -162,7 +156,7 @@ int main(int argc, char *argv[]) {
         }
         else if (!strcmp(command, "question_submit") || !strcmp(command, "qs")) {
             if (tIsSet && uIsSet) {
-                //questionSubmitCommand(nextArg);
+                questionSubmitCommand(nextArg);
             }
             else {
                 if (!tIsSet) {
@@ -235,6 +229,7 @@ int openUDP() {
     hints.ai_socktype = SOCK_DGRAM;
 
     if (getaddrinfo(FShost, FSport, &hints, &res)) {
+        freeaddrinfo(res);
         perror("ERROR: getaddrinfo UDP\n");
         exit(EXIT_FAILURE);
     }
@@ -254,6 +249,7 @@ int openTCP() {
     hints.ai_socktype = SOCK_STREAM;
 
     if (getaddrinfo(FShost, FSport, &hints, &res)) {
+        freeaddrinfo(res);
         perror("ERROR: getaddrinfo TCP\n");
         exit(EXIT_FAILURE);
     }
@@ -411,7 +407,7 @@ void topicListCommand() {
                 return;
             }
             topic = arg;
-            topicLength = nextArg - arg;
+            topicLength = nextArg - arg - 1;
             arg = nextArg;
 
             /* Gets userID */
@@ -427,7 +423,7 @@ void topicListCommand() {
                 printf("ERR11\n");
                 return;
             }
-            IDLength = nextArg - arg;
+            IDLength = nextArg - arg - 1;
             arg = nextArg;
 
             /* Allocates and saves topic in topic list */
@@ -627,7 +623,7 @@ void questionListCommand() {
                 return;
             }
             question = arg;
-            questionLength = nextArg - arg;
+            questionLength = nextArg - arg - 1;
             arg = nextArg;
 
             /* Gets userID */
@@ -643,7 +639,7 @@ void questionListCommand() {
                 printf("ERR\n");
                 return;
             }
-            IDLength = nextArg - arg;
+            IDLength = nextArg - arg - 1;
             arg = nextArg;
 
             /* Gets number of answers */
@@ -659,7 +655,7 @@ void questionListCommand() {
                 printf("ERR\n");
                 return;
             }
-            NALength = nextArg - arg;
+            NALength = nextArg - arg - 1;
             arg = nextArg;
 
             /* Saves question in question list */
@@ -731,7 +727,7 @@ void questionGetCommand(char *command, int flag) {
     /* Checks if its a valid response */
     if (!isValidResponse(response, responseSize)) {
         free(response);
-        printf("ERR1\n");
+        printf("ERR\n");
         return;
     }
 
@@ -765,12 +761,12 @@ void questionGetCommand(char *command, int flag) {
     /* Gets QGR */
     if ((nextArg = getNextArg(response, ' ', -1)) == NULL) {
         free(response);
-        printf("ERR3\n");
+        printf("ERR\n");
         return;
     }
     if (strcmp(response, "QGR")) {
         free(response);
-        printf("ERR4\n");
+        printf("ERR\n");
         return;
     }
     arg = nextArg;
@@ -778,12 +774,12 @@ void questionGetCommand(char *command, int flag) {
     /* Gets ID */
     if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
         free(response);
-        printf("ERR5\n");
+        printf("ERR\n");
         return;
     }
     if (getUserID(arg) == -1) {
         free(response);
-        printf("ERR6\n");
+        printf("ERR\n");
         return;
     }
     arg = nextArg;
@@ -792,26 +788,26 @@ void questionGetCommand(char *command, int flag) {
     sprintf(qFileName, "%s/%s", selectedTopic, question);
     if ((arg = parseDataBlock(arg, responseSize - (arg - response), qFileName)) == NULL) {
         free(response);
-        printf("ERR7\n");
+        printf("ERR\n");
         return;
     }
 
     /* Gets number of answers */
     if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
         free(response);
-        printf("ERR8\n");
+        printf("ERR\n");
         return;
     }
     if ((N = toPositiveNum(arg)) == - 1) {
         free(response);
-        printf("ERR9\n");
+        printf("ERR\n");
         return;
     }
 
     /* Only a maximum of 10 answers can be sent */
     if (N > 10) {
         free(response);
-        printf("ERR10\n");
+        printf("ERR\n");
         return;
     }
     arg = nextArg;
@@ -822,17 +818,17 @@ void questionGetCommand(char *command, int flag) {
         /* Gets answer number */
         if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
             free(response);
-            printf("ERR11\n");
+            printf("ERR\n");
             return;
         }
         if ((AN = toPositiveNum(arg)) == -1) {
             free(response);
-            printf("ERR12\n");
+            printf("ERR\n");
             return;
         }
         if (AN > 10) {
             free(response);
-            printf("ERR13\n");
+            printf("ERR\n");
             return;
         }
         arg = nextArg;
@@ -840,12 +836,12 @@ void questionGetCommand(char *command, int flag) {
         /* Gets ID */
         if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
             free(response);
-            printf("ERR14\n");
+            printf("ERR\n");
             return;
         }
         if (getUserID(arg) == -1) {
             free(response);
-            printf("ERR15\n");
+            printf("ERR\n");
             return;
         }
         arg = nextArg;
@@ -854,7 +850,7 @@ void questionGetCommand(char *command, int flag) {
         sprintf(aFileName, "%s/%s_%d", selectedTopic, question, AN);
         if ((arg = parseDataBlock(arg, responseSize - (arg - response), aFileName)) == NULL) {
             free(response);
-            printf("ERR16\n");
+            printf("ERR\n");
             return;
         }
 
@@ -867,105 +863,107 @@ void questionGetCommand(char *command, int flag) {
 
 }
 
-/*  Parses a Data Block consisting of "fSize fData IMG [iExt iSize iData]"
-    content must be null terminated and have a space before null terminator
-    fn is the name of the file where data is going to be stored in
-    function handles extensions (file assumed to be .txt)
-    returns a pointer to end of string or null in case of insuccess */
-char* parseDataBlock(char *content, long cSize, char *fn) {
+void questionSubmitCommand(char *command) {
 
-    char *arg, *nextArg, fileName[TOPIC_SIZE + QUESTION_SIZE + 6];
+    char *message, *response, *arg, *nextArg, *question, *fn, *in, *dataBlock;
+    long responseSize, messageSize, dbSize;
     int IMG;
 
-    /* Handles "fSize fData" */
-    sprintf(fileName, "%s.txt", fn);
-    if ((arg = handleFile(content, cSize, fileName)) == NULL) {
-        printf("1");
-        return NULL;
+    /* Replace new line character */
+    if (replaceNewLine(command, ' ')) {
+        printf("ERR\n");
+        return;
     }
 
-    /* Checks if there is an image */
-    if ((nextArg = getNextArg(arg, ' ', 1)) == NULL) {
-        printf("2");
-        return NULL;
-    } 
-    if ((IMG = (int) toPositiveNum(arg)) == -1) {
-        printf("3");
-        return NULL;
+    /* Gets question */
+    if ((nextArg = getNextArg(command, ' ', -1)) == NULL) {
+        printf("ERR\n");
+        return;
     }
-
-    /* Checks if IMG is a binary flag */
-    if (IMG < 0 || IMG > 1) {
-        printf("4");
-        return NULL;
+    if (!isValidQuestion(command)) {
+        printf("Invalid question\n");
+        return;
+    }
+    question = command;    
+    if (isInList(question, questionList, qlSize)) {
+        printf("Question already exists\n");
+        return;
     }
     arg = nextArg;
 
-    /* There is an image */
-    if (IMG) {
-
-        /* Handles "iExt iSize iData" */
-        if ((nextArg = handleImage(arg, cSize - (nextArg - content), fn)) == NULL) {
-            printf("5");
-            return NULL;
-        }
+    /* Checks for file */
+    if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
+        printf("Please provide a file\n");
+        return;
     }
-        
-    return nextArg;
-
-}
-
-/*  Handles the image portion of the Data Block "ext size data"
-    return a pointer to end of portion or null in case of insuccess */
-char* handleImage(char *content, int cSize, char *fn) {
-
-    char *nextArg, imageName[strlen(fn) + EXTENSION_SIZE + 2];
-
-    /* Gets image extension */
-    if ((nextArg = getNextArg(content, ' ', EXTENSION_SIZE)) == NULL) {
-        return NULL;
-    }
-    sprintf(imageName, "%s.%s", fn, content);
-
-    /* Handles "size data" */
-    if ((nextArg = handleFile(nextArg, cSize - (nextArg - content), imageName)) == NULL) {
-        return NULL;
-    }
-
-    return nextArg;
-
-}
-
-/*  Handles the file portion of the Data Block "size data"
-    returns a pointer to end of portion or null in case of insucess */
-char* handleFile(char *content, int cSize, char *fn) {
-
-    char *nextArg;
-    long size;
-
-    /* Gets size of data */
-    if ((nextArg = getNextArg(content, ' ', -1)) == NULL) {
-        return NULL;
-    }
-    if ((size = toPositiveNum(content)) == -1) {
-        return NULL;
-    }
-
-    /* Checks if size isnt greater than space left on the buffer */
-    if (nextArg + size > content + cSize - 1) {
-        return NULL;
-    }
-
-    /* Stores data in file */
-    FILE *f = fopen(fn, "w");
-    if (f == NULL) {
-        perror("ERROR: fopen\n");
+    if ((fn = (char*) malloc(sizeof(char) * (nextArg - arg - 1 + 5))) == NULL) {
+        perror("ERROR: malloc\n");
         exit(EXIT_FAILURE);
     }
-    fwrite(nextArg, sizeof(char), size, f);
-    fclose(f);
+    sprintf(fn, "%s%s", arg, ".txt");
+    arg = nextArg;
 
-    return nextArg + size + 1;
+    /* Checks for image */
+    if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
+        in = NULL;
+        IMG = 0;
+    }
+    else {
+        in = arg;
+        IMG = 1;
+    }
+
+    /* Builds Data Block */
+    if ((dataBlock = createDataBlock(fn, IMG, in, &dbSize)) == NULL) {
+        return;
+    }
+    free(fn);
+
+    /* Allocates and builds message */
+    message = (char*) malloc(3 + ID_SIZE + TOPIC_SIZE + strlen(question) + dbSize + 5);
+    if (message == NULL) {
+        perror("ERROR: malloc\n");
+        exit(EXIT_FAILURE);
+    }
+    sprintf(message, "QUS %s %s %s ", userID, selectedTopic, question);
+    messageSize = strlen(message);
+    memcpy(message + messageSize, dataBlock, dbSize);
+    free(dataBlock);
+    messageSize += dbSize;
+    *(message + messageSize) = '\n';
+
+    response = sendMessageTCP(message, messageSize + 1, &responseSize);
+    free(message);
+
+    /* Checks if its a valid response */
+    if (!isValidResponse(response, responseSize)) {
+        free(response);
+        printf("ERR\n");
+        return;
+    }
+
+    /* Displays response */
+    if (!strcmp(response, "QUR OK\n")) {
+
+        /* Saves question in case of success */
+        strcpy(selectedQuestion, question);
+        qIsSet = 1;
+        printf("Question submited successfully\n");
+    }
+    else if (!strcmp(response, "QUR DUP\n")) {
+        printf("Question already exists\n");
+    }
+    else if (!strcmp(response, "QUR FUL\n")) {
+        printf("Question list is full\n");
+    }
+    else if (!strcmp(response, "QUR NOK\n")) {
+        printf("Something went wrong on server side\n");
+    }
+    else {
+        printf("ERR\n");
+    }
+
+    free(response);
 
 }
 
