@@ -3,4 +3,5 @@
 client
 server
 user
+*.o
 MSGLOG.txt
