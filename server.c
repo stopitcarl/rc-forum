@@ -55,10 +55,11 @@ void waitChild() {
 /*Reads from the tcp socket*/
 void readFromTCP(int src, char *buffer) {
     int nbytes, nleft, nread;
-    char *ptr = buffer;
+    char *ptr;
 
     nbytes = BUFFER_SIZE;
     nleft = nbytes;
+    ptr = buffer;
 
     /*Makes sure the entire message is read*/
     while (nleft > 0) {
@@ -70,22 +71,24 @@ void readFromTCP(int src, char *buffer) {
         nleft -= nread;
         ptr += nread;
     }
+
+    if (nread == -1)
+        error("Error reading from tcp socket");
 }
 
 /*Writes to tcp socket*/
 void replyToTCP(char *msg, int dst)
 {
-    int nbytes, nleft, nwritten;
+    int nbytes, n, nwritten;
 
     nbytes = strlen(msg);
-    nleft = nbytes;
 
     /*Makes sure the entire message is written*/
-    while (nleft > 0) {
-        nwritten = write(dst, msg, nleft);
-        if (nwritten <= 0)
+    while (nwritten < nbytes) {
+        n = write(dst, msg + nwritten, nbytes - nwritten);
+        if (n == -1)
             error("Error writing to tcp socket");
-        nleft -= nwritten;
+        nwritten += n;
     }
 }
 
@@ -312,6 +315,26 @@ void findTopic(char *topic, char *dirName) {
     dirName[0] = '\0';
 }
 
+/*Searches a certain topic for a question*/
+int findQuestion(char *topicDir, char *question) {
+    DIR *dir;
+    struct dirent *entry;
+
+    /*Opens directory*/
+    if (!(dir = opendir(topicDir)))
+        error("Error opening directory");
+
+    /*Cycles through the topic's directory*/
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_REG && strchr(entry->d_name, '_') != NULL) {
+            if (!strcmp(strtok(entry->d_name, "."), question))
+                return 1;
+        }
+    }
+
+    return 0;
+}
+
 /*Proposes topic to the forum*/
 void topicProposeCommand(char *id, char *response) {
     char *topic, *lastArg;
@@ -322,14 +345,14 @@ void topicProposeCommand(char *id, char *response) {
     topic = getNextArg(id, ' ', -1);
 
     if (topic == NULL) {
-        strcpy(response, "PTR NOK\n");
+        strcpy(response, "ERR\n");
         return;
     }
 
     lastArg = getNextArg(topic, ' ', -1);
 
     if (lastArg != NULL) {
-        strcpy(response, "PTR NOK\n");
+        strcpy(response, "ERR\n");
         return;
     }
 
@@ -422,8 +445,132 @@ void questionListCommand(char *topic, char *response) {
 
 // ######## START OF TCP COMMANDS ###########
 
-void questionGetCommand(char * response){
+/*void questionGetCommand(char * response){
 
+}*/
+
+/*Submits question to a certain topic*/
+void questionSubmitCommand(char *id, char *response) {
+    char *topic, *question, *size, *data, *img;
+    char *iext, *isize, *idata;
+    char *lastArg;
+    char *ret;
+    char dirName[TOPIC_LEN + 8];
+    char questionName[TOPIC_LEN + 4];
+    char imageName[TOPIC_LEN + 4];
+    char testTopic[TOPIC_LEN];
+    int imgFlag;
+    long lSize;
+    int nQuestions;
+
+    /*Get arguments*/
+    topic = getNextArg(id, ' ', -1);
+    if (topic == NULL) {
+        strcpy(response, "ERR\n");
+        return;
+    }
+
+    question = getNextArg(topic, ' ', -1);
+    if (question == NULL) {
+        strcpy(response, "ERR\n");
+        return;
+    }
+
+    size = getNextArg(question, ' ', -1);
+    if (size == NULL) {
+        strcpy(response, "ERR\n");
+        return;
+    }
+
+    data = getNextArg(size, ' ', -1);
+    if (data == NULL) {
+        strcpy(response, "ERR\n");
+        return;
+    }
+
+    img = getNextArg(data, ' ', -1);
+    if (img == NULL) {
+        strcpy(response, "ERR\n");
+        return;
+    }
+
+    imgFlag = atoi(img);
+    if (imgFlag) {
+        iext = getNextArg(img, ' ', -1);
+        if (iext == NULL) {
+            strcpy(response, "ERR\n");
+            return;
+        }
+
+        isize = getNextArg(iext, ' ', -1);
+        if (isize == NULL) {
+            strcpy(response, "ERR\n");
+            return;
+        }
+
+        idata = getNextArg(isize, ' ', -1);
+        if (idata == NULL) {
+            strcpy(response, "ERR\n");
+            return;
+        }
+
+        lastArg = getNextArg(idata, ' ', -1);
+        if (lastArg != NULL) {
+            strcpy(response, "ERR\n");
+            return;
+        }
+    } else {
+        lastArg = getNextArg(img, ' ', -1);
+        if (lastArg != NULL) {
+            strcpy(response, "ERR\n");
+            return;
+        }
+    }
+
+    findTopic(topic, testTopic);
+    strcpy(dirName, "topics/");
+    strcat(dirName, testTopic);
+
+    /*Checks if id and topic are correct*/
+    if (!isValidID(id) || !isValidTopic(topic) || *testTopic == '\0' ||
+            !isValidQuestion(question)) {
+        strcpy(response, "QUR NOK\n");
+        return;
+    } else if (findQuestion(dirName, question)) {
+        strcpy(response, "QUR DUP\n");
+        return;
+    } else if ((nQuestions = countQuestions(dirName)) == 99) {
+        strcpy(response, "QUR FUL\n");
+        return;
+    }
+
+    strcpy(questionName, question);
+    strcat(questionName, "-");
+    strcat(questionName, id);
+    strcat(questionName, ".txt");
+
+    lSize = atol(size);
+    ret = parseDataBlock(data, lSize, questionName);
+    if (ret == NULL) {
+        strcpy(response, "QUR NOK\n");
+        return;
+    }
+
+    if (imgFlag) {
+        strcpy(imageName, question);
+        strcat(imageName, "-");
+        strcat(imageName, id);
+        strcat(imageName, iext);
+
+        lSize = atol(isize);
+        ret = parseDataBlock(idata, lSize, imageName);
+        if (ret == NULL) {
+            strcpy(response, "QUR NOK\n");
+            return;
+        }
+    }
+
+    strcpy(response, "QUR OK\n");
 }
 
 // ######## END OF TCP COMMANDS ###########
@@ -447,8 +594,7 @@ void handleCommand(char *request, char *response)
     if (!strcmp(request, "REG"))
     {
         registerCommand(arg, response);
-    }
-    else if (!strcmp(request, "LTP"))
+    } else if (!strcmp(request, "LTP"))
     {
         topicListCommand(response);
     }
@@ -466,6 +612,7 @@ void handleCommand(char *request, char *response)
     }
     else if (!strcmp(request, "QUS"))
     {
+        questionSubmitCommand(arg, response);
     }
     else if (!strcmp(request, "ANS"))
     {
@@ -481,6 +628,7 @@ int main()
     struct sigaction pipe, intr, child;
     char response[BUFFER_SIZE];
     char buffer[BUFFER_SIZE];
+    char *tcpBuffer;
     int client;
     pid_t pid;
 
@@ -552,10 +700,17 @@ int main()
                 error("Error on fork");
             else if (pid == 0) {
                 close(tcp);
+                tcpBuffer = (char *) malloc(BUFFER_SIZE);
+                if (tcpBuffer == NULL)
+                    error("Error on malloc");
+
                 readFromTCP(client, buffer);
+                printf("tcp received: %s", buffer);
                 handleCommand(buffer, response);
+                printf("%s", response);
                 replyToTCP(response, client);
                 close(client);
+                free(tcpBuffer);
                 exit(EXIT_SUCCESS);
             }
 
