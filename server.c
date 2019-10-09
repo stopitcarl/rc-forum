@@ -23,7 +23,7 @@
 
 int n, udp, tcp;
 int nTopics;
-fd_set rfds;
+fd_set rfds, afds;
 socklen_t addrlen;
 struct addrinfo hints, *res;
 struct sockaddr_in addr;
@@ -32,8 +32,10 @@ void closeServer()
 {
     freeaddrinfo(res);
     FD_CLR(udp, &rfds);
+    FD_CLR(udp, &afds);
     close(udp);
     FD_CLR(tcp, &rfds);
+    FD_CLR(tcp, &afds);
     close(tcp);
     puts("Closing server");
     exit(EXIT_SUCCESS);
@@ -53,31 +55,33 @@ void waitChild() {
 }
 
 /*Reads from the tcp socket*/
-void readFromTCP(int src, char *buffer) {
+int readFromTCP(int src, char *buffer) {
     int nbytes, nleft, nread;
-    char *ptr;
 
     nbytes = BUFFER_SIZE;
     nleft = nbytes;
-    ptr = buffer;
 
     /*Makes sure the entire message is read*/
-    while (nleft > 0) {
-        nread = read(src, ptr, nleft);
-        if (nread == -1)
-            error("Error reading from tcp socket");
-        else if (nread == 0)
-            break;
+    while ((nread = read(src, buffer + nbytes - nleft, nleft)) > 0) {
         nleft -= nread;
-        ptr += nread;
+        if (nleft == 0) {
+            nleft = BUFFER_SIZE;
+            nbytes += BUFFER_SIZE;
+            if ((buffer = (char *) realloc(buffer, nbytes)) == NULL)
+                error("Error on realloc");
+        }
+
+        if (*(buffer + nbytes - nleft - 1) == '\n') break;
     }
 
-    if (nread == -1)
+    if (n == -1)
         error("Error reading from tcp socket");
+
+    return nbytes - nleft;
 }
 
 /*Writes to tcp socket*/
-void replyToTCP(char *msg, int dst)
+int replyToTCP(char *msg, int dst)
 {
     int nbytes, n, nwritten;
 
@@ -90,6 +94,8 @@ void replyToTCP(char *msg, int dst)
             error("Error writing to tcp socket");
         nwritten += n;
     }
+
+    return nwritten;
 }
 
 
@@ -451,16 +457,11 @@ void questionListCommand(char *topic, char *response) {
 
 /*Submits question to a certain topic*/
 void questionSubmitCommand(char *id, char *response) {
-    char *topic, *question, *size, *data, *img;
-    char *iext, *isize, *idata;
-    char *lastArg;
+    char *topic, *question, *data;
     char *ret;
     char dirName[TOPIC_LEN + 8];
-    char questionName[TOPIC_LEN + 4];
-    char imageName[TOPIC_LEN + 4];
+    char questionName[TOPIC_LEN + 9 + TOPIC_LEN + 4];
     char testTopic[TOPIC_LEN];
-    int imgFlag;
-    long lSize;
     int nQuestions;
 
     /*Get arguments*/
@@ -476,60 +477,14 @@ void questionSubmitCommand(char *id, char *response) {
         return;
     }
 
-    size = getNextArg(question, ' ', -1);
-    if (size == NULL) {
-        strcpy(response, "ERR\n");
-        return;
-    }
-
-    data = getNextArg(size, ' ', -1);
+    data = getNextArg(question, ' ', -1);
     if (data == NULL) {
         strcpy(response, "ERR\n");
         return;
     }
-
-    img = getNextArg(data, ' ', -1);
-    if (img == NULL) {
-        strcpy(response, "ERR\n");
-        return;
-    }
-
-    imgFlag = atoi(img);
-    if (imgFlag) {
-        iext = getNextArg(img, ' ', -1);
-        if (iext == NULL) {
-            strcpy(response, "ERR\n");
-            return;
-        }
-
-        isize = getNextArg(iext, ' ', -1);
-        if (isize == NULL) {
-            strcpy(response, "ERR\n");
-            return;
-        }
-
-        idata = getNextArg(isize, ' ', -1);
-        if (idata == NULL) {
-            strcpy(response, "ERR\n");
-            return;
-        }
-
-        lastArg = getNextArg(idata, ' ', -1);
-        if (lastArg != NULL) {
-            strcpy(response, "ERR\n");
-            return;
-        }
-    } else {
-        lastArg = getNextArg(img, ' ', -1);
-        if (lastArg != NULL) {
-            strcpy(response, "ERR\n");
-            return;
-        }
-    }
-
     findTopic(topic, testTopic);
-    strcpy(dirName, "topics/");
-    strcat(dirName, testTopic);
+
+    sprintf(dirName, "topics/%s", testTopic);
 
     /*Checks if id and topic are correct*/
     if (!isValidID(id) || !isValidTopic(topic) || *testTopic == '\0' ||
@@ -544,30 +499,15 @@ void questionSubmitCommand(char *id, char *response) {
         return;
     }
 
-    strcpy(questionName, question);
-    strcat(questionName, "-");
-    strcat(questionName, id);
-    strcat(questionName, ".txt");
+    sprintf(questionName, "%s/%s-%s", dirName, question, id);
 
-    lSize = atol(size);
-    ret = parseDataBlock(data, lSize, questionName);
+    strcat(data, " ");
+
+    //lSize = atol(size);
+    ret = parseDataBlock(data, BUFFER_SIZE, questionName);
     if (ret == NULL) {
         strcpy(response, "QUR NOK\n");
         return;
-    }
-
-    if (imgFlag) {
-        strcpy(imageName, question);
-        strcat(imageName, "-");
-        strcat(imageName, id);
-        strcat(imageName, iext);
-
-        lSize = atol(isize);
-        ret = parseDataBlock(idata, lSize, imageName);
-        if (ret == NULL) {
-            strcpy(response, "QUR NOK\n");
-            return;
-        }
     }
 
     strcpy(response, "QUR OK\n");
@@ -655,16 +595,19 @@ int main()
     if (sigaction(SIGCHLD, &child, NULL) == -1)
         error("Error on sigaction");
 
+    FD_ZERO(&afds);
+    FD_SET(udp, &afds);
+    FD_SET(tcp, &afds);
+
     while (1)
     {
-        FD_ZERO(&rfds);
-        FD_SET(udp, &rfds);
-        FD_SET(tcp, &rfds);
+        rfds = afds;
 
-        n = select(FD_SETSIZE, &rfds, NULL, NULL, NULL);
-        if (n <= 0 && errno != EINTR) {
+        do {
+            n = select(FD_SETSIZE, &rfds, NULL, NULL, NULL);
+        } while (n == -1 && errno == EINTR);
+        if (n == -1)
             error("Error on select");
-        }
 
         else if (FD_ISSET(udp, &rfds))
         {
@@ -704,11 +647,13 @@ int main()
                 if (tcpBuffer == NULL)
                     error("Error on malloc");
 
-                readFromTCP(client, buffer);
-                printf("tcp received: %s", buffer);
+                n = readFromTCP(client, buffer);
+                write(1, "tcp received: ", 14);
+                write(1, buffer, n);
                 handleCommand(buffer, response);
                 printf("%s", response);
-                replyToTCP(response, client);
+                n = replyToTCP(response, client);
+                printf("%d\n", n);
                 close(client);
                 free(tcpBuffer);
                 exit(EXIT_SUCCESS);
@@ -719,10 +664,22 @@ int main()
             } while (ret == -1 && errno == EINTR);
             if (ret == -1)
                 error("Error closing client");
+            /*tcpBuffer = (char *) malloc(BUFFER_SIZE);
+            if (tcpBuffer == NULL)
+                error("Error on malloc");
+            n = readFromTCP(client, buffer);
+            write(1, "tcp received: ", 14);
+            write(1, buffer, n);
+            handleCommand(buffer, response);
+            printf("%s", response);
+            n = replyToTCP(response, client);
+            printf("%d\n", n);
+            close(client);
+            free(tcpBuffer);*/
         }
     }
 
-    puts("closing server, byeeee\n");
+    puts("Closing server\n");
     freeaddrinfo(res);
     FD_CLR(udp, &rfds);
     close(udp);
