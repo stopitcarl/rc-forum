@@ -21,7 +21,7 @@
 #define QUESTION_LEN 19
 #define SMALL_BUFFER_SIZE 64
 
-int n, udp, tcp;
+int transferBytes, udp, tcp;
 int nTopics;
 fd_set rfds, afds;
 socklen_t addrlen;
@@ -74,7 +74,7 @@ int readFromTCP(int src, char *buffer) {
         if (*(buffer + nbytes - nleft - 1) == '\n') break;
     }
 
-    if (n == -1)
+    if (nread == -1)
         error("Error reading from tcp socket");
 
     return nbytes - nleft;
@@ -83,7 +83,7 @@ int readFromTCP(int src, char *buffer) {
 /*Writes to tcp socket*/
 int replyToTCP(char *msg, int dst)
 {
-    int nbytes, n, nwritten;
+    int nbytes, n, nwritten = 0;
 
     nbytes = strlen(msg);
 
@@ -102,7 +102,7 @@ int replyToTCP(char *msg, int dst)
 int openTCP()
 {
     //Sets up tcp socket
-    int fd;
+    int fd, n;
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;       // IPv4
@@ -132,6 +132,8 @@ int openTCP()
 
 int openUDP()
 {
+    int n;
+
     // Setup socket
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;      // IPv4
@@ -199,10 +201,10 @@ int countAnswers(char *dirName, char *question) {
     if (!(dir = opendir(dirName)))
         error("Error opening directory");
 
-    /*Coutns number of answers to a certain question*/
+    /*Counts number of answers to a certain question*/
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_REG && strchr(entry->d_name, '_') != NULL &&
-                !strcmp(strtok(entry->d_name, "_"), strtok(question, "."))) {
+                !strcmp(strtok(entry->d_name, "_"), strtok(question, "-"))) {
             count++;
         }
     }
@@ -332,8 +334,28 @@ int findQuestion(char *topicDir, char *question) {
 
     /*Cycles through the topic's directory*/
     while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_REG && strchr(entry->d_name, '_') == NULL) {
+            if (!strcmp(strtok(entry->d_name, "-"), question))
+                return 1;
+        }
+    }
+
+    return 0;
+}
+
+/*Searches a certain topic for an answer*/
+int findAnswer(char *topicDir, char *answer) {
+    DIR *dir;
+    struct dirent *entry;
+
+    /*Opens directory*/
+    if (!(dir = opendir(topicDir)))
+        error("Error opening directory");
+
+    /*Cycles through the topic's directory*/
+    while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_REG && strchr(entry->d_name, '_') != NULL) {
-            if (!strcmp(strtok(entry->d_name, "."), question))
+            if (!strcmp(strtok(entry->d_name, "-"), answer))
                 return 1;
         }
     }
@@ -504,7 +526,66 @@ void questionSubmitCommand(char *id, char *response) {
     strcat(data, " ");
 
     //lSize = atol(size);
-    ret = parseDataBlock(data, BUFFER_SIZE, questionName);
+    ret = parseDataBlock(data, transferBytes, questionName);
+    if (ret == NULL) {
+        strcpy(response, "QUR NOK\n");
+        return;
+    }
+
+    strcpy(response, "QUR OK\n");
+}
+
+/*Submits answer to a certain question*/
+void answerSubmitCommand(char *id, char *response) {
+    char *topic, *question, *data;
+    char *ret;
+    char dirName[TOPIC_LEN + 8];
+    char answerName[TOPIC_LEN + 9 + TOPIC_LEN + 4 + 3];
+    char questionName[TOPIC_LEN + 9 + TOPIC_LEN + 4];
+    char testTopic[TOPIC_LEN];
+    int nAnswers;
+
+    /*Get arguments*/
+    topic = getNextArg(id, ' ', -1);
+    if (topic == NULL) {
+        strcpy(response, "ERR\n");
+        return;
+    }
+
+    question = getNextArg(topic, ' ', -1);
+    if (question == NULL) {
+        strcpy(response, "ERR\n");
+        return;
+    }
+
+    data = getNextArg(question, ' ', -1);
+    if (data == NULL) {
+        strcpy(response, "ERR\n");
+        return;
+    }
+    findTopic(topic, testTopic);
+
+    sprintf(dirName, "topics/%s", testTopic);
+    sprintf(questionName, "%s/%s-%s", dirName, question, id);
+
+    /*Checks if id and topic are correct*/
+    if (!isValidID(id) || !isValidTopic(topic) || *testTopic == '\0' ||
+            !isValidQuestion(question)) {
+        strcpy(response, "QUR NOK\n");
+        return;
+    } else if (!findQuestion(dirName, question)) {
+        strcpy(response, "QUR NOK\n");
+        return;
+    } else if ((nAnswers = countAnswers(dirName, questionName)) == 99) {
+        strcpy(response, "QUR FUL\n");
+        return;
+    }
+
+    strcat(data, " ");
+    sprintf(answerName, "%s_%02d", questionName, ++nAnswers);
+
+    //lSize = atol(size);
+    ret = parseDataBlock(data, transferBytes, answerName);
     if (ret == NULL) {
         strcpy(response, "QUR NOK\n");
         return;
@@ -569,7 +650,7 @@ int main()
     char response[BUFFER_SIZE];
     char buffer[BUFFER_SIZE];
     char *tcpBuffer;
-    int client;
+    int n, client;
     pid_t pid;
 
     udp = openUDP();
@@ -614,19 +695,19 @@ int main()
             //Got message from udp server
             memset(buffer, 0, sizeof buffer);
             addrlen = sizeof(addr);
-            n = recvfrom(udp, buffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
-            if (n == -1)
+            transferBytes = recvfrom(udp, buffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
+            if (transferBytes == -1)
                 error("Error receiving from udp socket");
 
             // Update client
             client = udp;
 
             write(1, "udp received: ", 14);
-            write(1, buffer, n);
+            write(1, buffer, transferBytes);
 
             handleCommand(buffer, response);
-            n = sendto(client, response, strlen(response), 0, (struct sockaddr *)&addr, addrlen);
-            if (n == -1)
+            transferBytes = sendto(client, response, strlen(response), 0, (struct sockaddr *)&addr, addrlen);
+            if (transferBytes == -1)
                 error("Error writing to udp socket");
         }
 
@@ -647,13 +728,11 @@ int main()
                 if (tcpBuffer == NULL)
                     error("Error on malloc");
 
-                n = readFromTCP(client, buffer);
+                transferBytes = readFromTCP(client, tcpBuffer);
                 write(1, "tcp received: ", 14);
-                write(1, buffer, n);
-                handleCommand(buffer, response);
-                printf("%s", response);
-                n = replyToTCP(response, client);
-                printf("%d\n", n);
+                write(1, tcpBuffer, transferBytes);
+                handleCommand(tcpBuffer, response);
+                replyToTCP(response, client);
                 close(client);
                 free(tcpBuffer);
                 exit(EXIT_SUCCESS);
