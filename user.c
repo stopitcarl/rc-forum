@@ -3,6 +3,7 @@
     1. CALCULATE SIZE NEEDED FOR RESPONSE AND FOR MESSAGE
     2. VERIFICAR SE QUANDO ACABEI DE DAR PARSE NOS ARGUMENTOS AINDA HA MAIS LIXO
     3. FAZER UNS TESTES COM FICHEIROS VAZIOS
+    4. O SERVER DO STOR MORRE COM FICHEIROS VAZIOS ehehehehhe
 */
 
 #include "auxiliary.h"
@@ -169,7 +170,7 @@ int main(int argc, char *argv[]) {
         }
         else if (!strcmp(command, "answer_submit") || !strcmp(command, "as")) {
             if (tIsSet && qIsSet && uIsSet) {
-                //answerSubmitCommand(nextArg);
+                answerSubmitCommand(nextArg);
             }
             else {
                 if (!tIsSet) {
@@ -177,6 +178,9 @@ int main(int argc, char *argv[]) {
                 }
                 if (!uIsSet) {
                     printf("No user registered\n");
+                }
+                if (!qIsSet) {
+                    printf("No question selected\n");
                 }
             }
         }
@@ -858,6 +862,7 @@ void questionGetCommand(char *command, int flag) {
 
     /* Selects question as localy active question */
     strcpy(selectedQuestion, question);
+    qIsSet = 1;
 
     free(response);
 
@@ -957,6 +962,87 @@ void questionSubmitCommand(char *command) {
         printf("Question list is full\n");
     }
     else if (!strcmp(response, "QUR NOK\n")) {
+        printf("Something went wrong on server side\n");
+    }
+    else {
+        printf("ERR\n");
+    }
+
+    free(response);
+
+}
+
+void answerSubmitCommand(char *command) {
+
+    char *message, *response, *arg, *nextArg, *fn, *in, *dataBlock;
+    long responseSize, messageSize, dbSize;
+    int IMG;
+
+    /* Replace new line character */
+    if (replaceNewLine(command, ' ')) {
+        printf("ERR\n");
+        return;
+    }
+
+    /* Checks for file */
+    if ((nextArg = getNextArg(command, ' ', -1)) == NULL) {
+        printf("Please provide a file\n");
+        return;
+    }
+    if ((fn = (char*) malloc(sizeof(char) * (nextArg - command - 1 + 5))) == NULL) {
+        perror("ERROR: malloc\n");
+        exit(EXIT_FAILURE);
+    }
+    sprintf(fn, "%s%s", command, ".txt");
+    arg = nextArg;
+
+    /* Checks for image */
+    if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
+        in = NULL;
+        IMG = 0;
+    }
+    else {
+        in = arg;
+        IMG = 1;
+    }
+
+    /* Builds Data Block */
+    if ((dataBlock = createDataBlock(fn, IMG, in, &dbSize)) == NULL) {
+        return;
+    }
+    free(fn);
+
+    /* Allocates and builds message */
+    message = (char*) malloc(3 + ID_SIZE + TOPIC_SIZE + QUESTION_SIZE + dbSize + 5);
+    if (message == NULL) {
+        perror("ERROR: malloc\n");
+        exit(EXIT_FAILURE);
+    }
+    sprintf(message, "ANS %s %s %s ", userID, selectedTopic, selectedQuestion);
+    messageSize = strlen(message);
+    memcpy(message + messageSize, dataBlock, dbSize);
+    free(dataBlock);
+    messageSize += dbSize;
+    *(message + messageSize) = '\n';
+
+    response = sendMessageTCP(message, messageSize + 1, &responseSize);
+    free(message);
+
+    /* Checks if its a valid response */
+    if (!isValidResponse(response, responseSize)) {
+        free(response);
+        printf("ERR\n");
+        return;
+    }
+
+    /* Displays response */
+    if (!strcmp(response, "ANR OK\n")) {
+        printf("Answer submited successfully\n");
+    }
+    else if (!strcmp(response, "ANR FUL\n")) {
+        printf("Answer list is full\n");
+    }
+    else if (!strcmp(response, "ANR NOK\n")) {
         printf("Something went wrong on server side\n");
     }
     else {

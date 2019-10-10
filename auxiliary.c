@@ -19,6 +19,21 @@ long toPositiveNum(char *s) {
 
 }
 
+long digits(long n) {
+
+    int d = 1;
+
+    if (n < 0) {
+        return -1;
+    }
+    while (n > 9) {
+        n /= 10;
+        d++;
+    }
+    return d;
+
+}
+
 long getUserID(char *s) {
 
     if (strlen(s) == ID_SIZE) {
@@ -85,7 +100,7 @@ int replaceNewLine(char *s, char c) {
 
 int isValidResponse(char *s, long size) {
 
-    if (s == NULL || size == 0 || !endsWithNewLine(s, size)) {
+    if (s == NULL || size == 1 || !endsWithNewLine(s, size)) {
         return 0;
     }
     else {
@@ -187,9 +202,13 @@ void printQuestionList(char **l, long size) {
 int isInList(char *s, char **l, long size) {
 
     int i;
+    char *c;
 
     for (i = 0; i < size; i++) {
-        if (strncmp(s, l[i], strlen(s)) == 0) {
+        if ((c = strchr(l[i], ' ')) == NULL) {
+            return 0;
+        }
+        if (strncmp(s, l[i], c-l[i]) == 0) {
             return 1;
         }
     }
@@ -241,23 +260,19 @@ char* parseDataBlock(char *content, long cSize, char *fn) {
     /* Handles "fSize fData" */
     sprintf(fileName, "%s.txt", fn);
     if ((arg = handleFile(content, cSize, fileName)) == NULL) {
-        printf("1");
         return NULL;
     }
 
     /* Checks if there is an image */
     if ((nextArg = getNextArg(arg, ' ', 1)) == NULL) {
-        printf("2");
         return NULL;
     } 
     if ((IMG = (int) toPositiveNum(arg)) == -1) {
-        printf("3");
         return NULL;
     }
 
     /* Checks if IMG is a binary flag */
     if (IMG < 0 || IMG > 1) {
-        printf("4");
         return NULL;
     }
     arg = nextArg;
@@ -267,7 +282,6 @@ char* parseDataBlock(char *content, long cSize, char *fn) {
 
         /* Handles "iExt iSize iData" */
         if ((nextArg = handleImage(arg, cSize - (nextArg - content), fn)) == NULL) {
-            printf("5");
             return NULL;
         }
     }
@@ -282,6 +296,9 @@ char* handleImage(char *content, int cSize, char *fn) {
 
     /* Gets image extension */
     if ((nextArg = getNextArg(content, ' ', EXTENSION_SIZE)) == NULL) {
+        return NULL;
+    }
+    if (!strcmp(content, "txt")) {
         return NULL;
     }
     sprintf(imageName, "%s.%s", fn, content);
@@ -336,7 +353,7 @@ char* createDataBlock(char *fn, int IMG, char *in, long *size) {
     if ((fData = readFromFile(fn, &fSize)) == NULL) {
         return NULL;
     }
-    fsDigits = floor(log10(abs(fSize))) + 1;
+    fsDigits = digits(fSize);
 
     if (IMG) {
 
@@ -351,6 +368,10 @@ char* createDataBlock(char *fn, int IMG, char *in, long *size) {
             return NULL;
         }
         iExt++;
+        if (!strcmp(iExt, "txt")) {
+            printf("Image extension must be different from txt\n");
+            return NULL;
+        }
         if (strlen(iExt) != EXTENSION_SIZE) {
             printf("Extension must be %d bytes long\n", EXTENSION_SIZE);
             return NULL;
@@ -362,7 +383,7 @@ char* createDataBlock(char *fn, int IMG, char *in, long *size) {
         }
 
         /* Allocates and builds Data Block */
-        isDigits = floor(log10(abs(iSize))) + 1;
+        isDigits = digits(iSize);
         *size = fsDigits + fSize + 1 + EXTENSION_SIZE + isDigits + iSize + 5;
         dataBlock = (char*) malloc(sizeof(char) * (*size));
         if (dataBlock == NULL) {
@@ -393,7 +414,7 @@ char* createDataBlock(char *fn, int IMG, char *in, long *size) {
         *size = fsDigits + fSize + 1 + 2;
         dataBlock = (char*) malloc(sizeof(char) * (*size));
         if (dataBlock == NULL) {
-            perror("ERROR: malloc");
+            perror("ERROR: malloc\n");
             exit(EXIT_FAILURE);
         }
         sprintf(dataBlock, "%ld ", fSize);
@@ -423,12 +444,22 @@ char* readFromFile(char *fn, long *size) {
     }
 
     /* Gets size of file */
-    fseek(f, 0, SEEK_END);
-    if ((*size = ftell(f)) > MAX_FILE_SIZE) {
-        printf("File size is greater than %ld", MAX_FILE_SIZE);
+    if (fseek(f, 0, SEEK_END) == -1) {
+        perror("ERROR: fseek\n");
+        exit(EXIT_FAILURE);
+    }
+    if ((*size = ftell(f)) == -1) {
+        perror("ERROR: ftell\n");
+        exit(EXIT_FAILURE);
+    }
+    if (*size > MAX_FILE_SIZE) {
+        printf("File size is greater than %ld\n", MAX_FILE_SIZE);
         return NULL;
     }
-    fseek(f, 0, SEEK_SET);
+    if (fseek(f, 0, SEEK_SET) == -1) {
+        perror("ERROR: fseek\n");
+        exit(EXIT_FAILURE);
+    }
 
     /* Allocs memory for file data and stores it */
     data = (char*) malloc(*size * sizeof(char));

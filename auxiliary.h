@@ -12,7 +12,6 @@
 #include <errno.h>
 #include <limits.h>
 #include <ctype.h>
-#include <math.h>
 #include <sys/select.h>
 #include <sys/time.h>
 
@@ -32,6 +31,9 @@
 /*  Turns a string into a number
     returns number or -1 in case of error */
 long toPositiveNum(char *s);
+
+/*  Returns number of digits of a positive number or -1 if negative */
+long digits(long n);
 
 /*  Turns a string into an ID if possible
     returns ID or -1 in case of error */
