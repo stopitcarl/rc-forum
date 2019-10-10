@@ -85,7 +85,7 @@ int replaceNewLine(char *s, char c) {
 
 int isValidResponse(char *s, long size) {
 
-    if (size == 0 || !endsWithNewLine(s, size)) {
+    if (s == NULL || size == 0 || !endsWithNewLine(s, size)) {
         return 0;
     }
     else {

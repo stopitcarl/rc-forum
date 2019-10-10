@@ -13,6 +13,8 @@
 #include <limits.h>
 #include <ctype.h>
 #include <math.h>
+#include <sys/select.h>
+#include <sys/time.h>
 
 #define BUFFER_SIZE 1024
 #define MAX_PORT_SIZE 10
@@ -25,6 +27,7 @@
 #define MAX_TOPICS 99
 #define MAX_ANSWERS 10
 #define MAX_FILE_SIZE 9999999999
+#define TIMEOUT 5
 
 /*  Turns a string into a number
     returns number or -1 in case of error */
