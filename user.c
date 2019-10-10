@@ -976,23 +976,43 @@ void questionSubmitCommand(char *command) {
 int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSize) {
     
     int n;
+    fd_set active_fd_set;
+    struct timeval timeout;
     
     printf("Sending %d bytes and message: \"", mBufferSize);
     fflush(stdout);
     write(1, message, mBufferSize);
     printf("\"\n");
     fflush(stdout);
+
     /* Sends message */
-    if ( (n =sendto(UDPfd, message, mBufferSize, 0, res->ai_addr, res->ai_addrlen)) == -1) {
+    if ((n =sendto(UDPfd, message, mBufferSize, 0, res->ai_addr, res->ai_addrlen)) == -1) {
         perror("ERROR: sendto\n");
         exit(EXIT_FAILURE);    
     }
 
-    /* Waits for response */
-    if ( (n = recvfrom(UDPfd, response, rBufferSize, 0, (struct sockaddr*) &addr, &addrlen)) == -1) {
-        perror("ERROR: recvfrom");
+    /* Initializes set of active fds */
+    FD_ZERO(&active_fd_set);
+    FD_SET(UDPfd, &active_fd_set);
+
+    /* Sets timeout for server response */
+    timeout.tv_sec = TIMEOUT;
+    timeout.tv_usec = 0;
+    if (select(FD_SETSIZE, &active_fd_set, NULL, NULL, &timeout) < 0) {
+        perror("ERROR: select\n");
         exit(EXIT_FAILURE);
     }
+    if (FD_ISSET(UDPfd, &active_fd_set)) {
+        if ((n = recvfrom(UDPfd, response, rBufferSize, 0, (struct sockaddr*) &addr, &addrlen)) == -1) {
+            perror("ERROR: recvfrom");
+            exit(EXIT_FAILURE);
+        }
+    }
+    else {
+        printf("Server took to long to respond\n");
+        return 0;
+    }
+
     /* Null terminates response */
     if (n < rBufferSize) {
         response[n] = '\0';
@@ -1014,6 +1034,8 @@ char* sendMessageTCP(char *message, long mBufferSize, long *responseSize) {
     char *response;
     long written = 0;
     int n, left = BUFFER_SIZE;
+    fd_set active_fd_set;
+    struct timeval timeout;
 
     *responseSize = 0;
 
@@ -1023,6 +1045,7 @@ char* sendMessageTCP(char *message, long mBufferSize, long *responseSize) {
     write(1, message, mBufferSize);
     printf("\"\n");
     fflush(stdout);
+    
     /* Sends message */
     while (written < mBufferSize) {
         n = write(TCPfd, message + written, mBufferSize - written);
@@ -1033,34 +1056,49 @@ char* sendMessageTCP(char *message, long mBufferSize, long *responseSize) {
         written += n;
     }
     
-    /* Waits for response */
-    *responseSize = BUFFER_SIZE;
-    response = (char*) malloc(BUFFER_SIZE);
-    if (response == NULL) {
-        perror("ERROR: malloc\n");
+    /* Initializes set of active fds */
+    FD_ZERO(&active_fd_set);
+    FD_SET(TCPfd, &active_fd_set);
+
+    /* Sets timeout for server response */
+    timeout.tv_sec = TIMEOUT;
+    timeout.tv_usec = 0;
+    if (select(FD_SETSIZE, &active_fd_set, NULL, NULL, &timeout) < 0) {
+        perror("ERROR: select\n");
         exit(EXIT_FAILURE);
     }
-    while ((n = read(TCPfd, response + *responseSize - left, left)) > 0) {
-        left -= n;
-        if (left == 0) {
-            left = BUFFER_SIZE;
-            *responseSize += BUFFER_SIZE;
-            if((response = (char *) realloc(response, *responseSize)) == NULL) {
-                perror("ERROR: realloc\n");
-                exit(EXIT_FAILURE);
+    if (FD_ISSET(TCPfd, &active_fd_set)) {
+        *responseSize = BUFFER_SIZE;
+        response = (char*) malloc(BUFFER_SIZE);
+        if (response == NULL) {
+            perror("ERROR: malloc\n");
+            exit(EXIT_FAILURE);
+        }
+        while ((n = read(TCPfd, response + *responseSize - left, left)) > 0) {
+            left -= n;
+
+            /* If no more space in buffer reallocates BUFFER_SIZE more bytes */
+            if (left == 0) {
+                left = BUFFER_SIZE;
+                *responseSize += BUFFER_SIZE;
+                if((response = (char *) realloc(response, *responseSize)) == NULL) {
+                    perror("ERROR: realloc\n");
+                    exit(EXIT_FAILURE);
+                }
             }
         }
+        if (n == -1) {
+            perror("ERROR: read\n");
+            exit(EXIT_FAILURE);
+        }
     }
-    if (n == -1) {
-        perror("ERROR: read\n");
-        exit(EXIT_FAILURE);
+    else {
+        printf("Server took to long to respond\n");
+        return NULL;
     }
-
-    write(1, response, *responseSize - left);
 
     /* Null terminates reponse */
     if (left == 0) {
-        printf("aaaaaaa\n");
         left = BUFFER_SIZE;
         *responseSize += BUFFER_SIZE;
         if((response = (char *) realloc(response, *responseSize)) == NULL) {
@@ -1076,7 +1114,7 @@ char* sendMessageTCP(char *message, long mBufferSize, long *responseSize) {
 
     printf("Recieved %ld bytes and response: \"", *responseSize - 1);
     fflush(stdout);
-    write(1, response, *responseSize);
+    write(1, response, *responseSize - 1);
     printf("\"\n");
     fflush(stdout);
 
