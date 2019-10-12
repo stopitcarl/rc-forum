@@ -85,7 +85,7 @@ int replyToTCP(char *msg, int dst)
 {
     int nbytes, n, nwritten = 0;
 
-    nbytes = strlen(msg);
+    nbytes = transferBytes;
 
     /*Makes sure the entire message is written*/
     while (nwritten < nbytes) {
@@ -160,17 +160,6 @@ int openUDP()
 
 // ######## START OF AUX FUNCTIONS ###########
 
-/* Check if str has newLine at the end of str and if so, deletes it
-int deleteNewLine(char *str)
-{
-    char *c;
-
-    if ((c = strchr(str, '\n')) != NULL)
-        *c = '\0';
-
-    return c != NULL;
-}*/
-
 int countQuestions(char *dirName) {
     DIR *dir;
     struct dirent *entry;
@@ -235,6 +224,31 @@ int countTopics() {
     closedir(dir);
 
     return count;
+}
+
+int findImage(char *dirName, char *question, char *imageName) {
+    DIR *dir;
+    struct dirent *entry;
+    char testFile[TOPIC_LEN + 4];
+
+    /*Opens directory*/
+    if (!(dir = opendir(dirName)))
+        error("Error opening directory");
+
+    /*Cycles through directory*/
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_REG) {
+            strcpy(testFile, entry->d_name);
+            if (!strcmp(strtok(testFile, "-"), question)) {
+                if (strstr(entry->d_name, ".txt") == NULL) {
+                    strcpy(imageName, entry->d_name);
+                    return 1;
+                }
+            }
+        }
+    }
+
+    return 0;
 }
 // ######## END OF AUX FUNCTIONS ###########
 
@@ -324,9 +338,10 @@ void findTopic(char *topic, char *dirName) {
 }
 
 /*Searches a certain topic for a question*/
-int findQuestion(char *topicDir, char *question) {
+int findQuestion(char *topicDir, char *question, char *fileName) {
     DIR *dir;
     struct dirent *entry;
+    char testFile[TOPIC_LEN + 4];
 
     /*Opens directory*/
     if (!(dir = opendir(topicDir)))
@@ -335,8 +350,12 @@ int findQuestion(char *topicDir, char *question) {
     /*Cycles through the topic's directory*/
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_REG && strchr(entry->d_name, '_') == NULL) {
-            if (!strcmp(strtok(entry->d_name, "-"), question))
+            strcpy(testFile, entry->d_name);
+            if (!strcmp(strtok(testFile, "-"), question) &&
+                    strstr(entry->d_name, ".txt") != NULL) {
+                if (fileName != NULL) strcpy(fileName, entry->d_name);
                 return 1;
+            }
         }
     }
 
@@ -445,7 +464,8 @@ void questionListCommand(char *topic, char *response) {
     /*Cycles through all topics in directory*/
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_REG) {
-            if (strchr(entry->d_name, '_') == NULL) {
+            if (strchr(entry->d_name, '_') == NULL &&
+                    strstr(entry->d_name, ".txt") != NULL) {
                 int nAnswers = countAnswers(dirName, entry->d_name);
                 char answerString[2];
                 sprintf(answerString, "%d", nAnswers);
@@ -473,9 +493,114 @@ void questionListCommand(char *topic, char *response) {
 
 // ######## START OF TCP COMMANDS ###########
 
-/*void questionGetCommand(char * response){
+void questionGetCommand(char *topic, char *response){
+    char *question, *lastArg;
+    char dirName[TOPIC_LEN + 8];
+    char testTopic[TOPIC_LEN];
+    char testQuestion[TOPIC_LEN + 4];
+    char questionFile[TOPIC_LEN + 9 + TOPIC_LEN + 4];
+    char answer[TOPIC_LEN + 2];
+    char answerFile[TOPIC_LEN + 9 + TOPIC_LEN + 2 + 4];
+    char imageName[TOPIC_LEN + 9 + TOPIC_LEN + 4];
+    char *id;
+    char *questionData;
+    char *answerData;
+    long *size = NULL, *newSize = NULL;
+    int IMG, nAnswers;
 
-}*/
+    transferBytes = BUFFER_SIZE;
+
+    question = getNextArg(topic, ' ', -1);
+    if (question == NULL) {
+        strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
+        return;
+    }
+
+    lastArg = getNextArg(question, ' ', -1);
+    if (lastArg != NULL) {
+        strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
+        return;
+    }
+
+    findTopic(topic, testTopic);
+    sprintf(dirName, "topics/%s", testTopic);
+
+    /*Checks if question and topic are correct*/
+    if (!isValidTopic(topic) || *testTopic == '\0' || !isValidQuestion(question)) {
+        strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
+        return;
+    } else if (!findQuestion(dirName, question, testQuestion)) {
+        strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
+        return;
+    }
+
+    sprintf(questionFile, "%s/%s", dirName, testQuestion);
+
+    /*Gets id from question file*/
+    id = testQuestion;
+    while (*id != '-')
+        id++;
+    id++;
+    id[5] = '\0';
+
+
+    IMG = findImage(dirName, question, imageName);
+
+    if (!IMG)
+        questionData = createDataBlock(questionFile, IMG, NULL, size);
+    else
+        questionData = createDataBlock(questionFile, IMG, imageName, size);
+
+    if (questionData == NULL) {
+        strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
+        return;
+    }
+
+    while (*size > transferBytes + 10) {
+        transferBytes += BUFFER_SIZE;
+        response = (char *) realloc(response, transferBytes + 10);
+    }
+
+    nAnswers = countAnswers(dirName, questionFile);
+
+    sprintf(response, "QGR %s %s %d ", id, questionData, nAnswers);
+    free(questionData);
+
+    /*Gets all the answers to question*/
+    for (int i = nAnswers; i > nAnswers - 10 && i > 0; i--) {
+        sprintf(answer, "%s_%02d", question, i);
+        sprintf(answerFile, "%s/%s-%s", dirName, answer, id);
+
+        IMG = findImage(dirName, answer, imageName);
+
+        if (!IMG)
+            answerData = createDataBlock(answerFile, IMG, NULL, newSize);
+        else
+            answerData = createDataBlock(answerFile, IMG, imageName, newSize);
+
+        if (answerData == NULL) {
+            strcpy(response, "ERR\n");
+            transferBytes = strlen(response);
+            return;
+        }
+
+        while (*newSize > *size) {
+            *size += BUFFER_SIZE;
+            response = (char *) realloc(response, *size);
+        }
+
+        strcat(response, " ");
+        strcat(response, answerData);
+        free(answerData);
+    }
+
+    strcat(response, "\n");
+}
 
 /*Submits question to a certain topic*/
 void questionSubmitCommand(char *id, char *response) {
@@ -513,7 +638,7 @@ void questionSubmitCommand(char *id, char *response) {
             !isValidQuestion(question)) {
         strcpy(response, "QUR NOK\n");
         return;
-    } else if (findQuestion(dirName, question)) {
+    } else if (findQuestion(dirName, question, NULL)) {
         strcpy(response, "QUR DUP\n");
         return;
     } else if ((nQuestions = countQuestions(dirName)) == 99) {
@@ -571,27 +696,26 @@ void answerSubmitCommand(char *id, char *response) {
     /*Checks if id and topic are correct*/
     if (!isValidID(id) || !isValidTopic(topic) || *testTopic == '\0' ||
             !isValidQuestion(question)) {
-        strcpy(response, "QUR NOK\n");
+        strcpy(response, "ANR NOK\n");
         return;
-    } else if (!findQuestion(dirName, question)) {
-        strcpy(response, "QUR NOK\n");
+    } else if (!findQuestion(dirName, question, NULL)) {
+        strcpy(response, "ANR NOK\n");
         return;
     } else if ((nAnswers = countAnswers(dirName, questionName)) == 99) {
-        strcpy(response, "QUR FUL\n");
+        strcpy(response, "ANR FUL\n");
         return;
     }
 
     strcat(data, " ");
-    sprintf(answerName, "%s_%02d", questionName, ++nAnswers);
+    sprintf(answerName, "%s/%s_%02d-%s",dirName, question, ++nAnswers, id);
 
-    //lSize = atol(size);
     ret = parseDataBlock(data, transferBytes, answerName);
     if (ret == NULL) {
         strcpy(response, "QUR NOK\n");
         return;
     }
 
-    strcpy(response, "QUR OK\n");
+    strcpy(response, "ANR OK\n");
 }
 
 // ######## END OF TCP COMMANDS ###########
@@ -611,7 +735,6 @@ void handleCommand(char *request, char *response)
     arg = getNextArg(request, ' ', -1);
 
     /* Checks for command type */
-    // TODO: implement commented funtions
     if (!strcmp(request, "REG"))
     {
         registerCommand(arg, response);
@@ -629,7 +752,7 @@ void handleCommand(char *request, char *response)
     }
     else if (!strcmp(request, "GQU"))
     {
-        // questionGetCommand(response);
+        questionGetCommand(arg, response);
     }
     else if (!strcmp(request, "QUS"))
     {
@@ -637,6 +760,7 @@ void handleCommand(char *request, char *response)
     }
     else if (!strcmp(request, "ANS"))
     {
+        answerSubmitCommand(arg, response);
     }
     else
     {
@@ -649,7 +773,7 @@ int main()
     struct sigaction pipe, intr, child;
     char response[BUFFER_SIZE];
     char buffer[BUFFER_SIZE];
-    char *tcpBuffer;
+    char *tcpBuffer, *tcpResponse;
     int n, client;
     pid_t pid;
 
@@ -725,16 +849,19 @@ int main()
             else if (pid == 0) {
                 close(tcp);
                 tcpBuffer = (char *) malloc(BUFFER_SIZE);
+                tcpResponse = (char *) malloc(BUFFER_SIZE);
                 if (tcpBuffer == NULL)
                     error("Error on malloc");
 
                 transferBytes = readFromTCP(client, tcpBuffer);
                 write(1, "tcp received: ", 14);
                 write(1, tcpBuffer, transferBytes);
-                handleCommand(tcpBuffer, response);
-                replyToTCP(response, client);
+                handleCommand(tcpBuffer, tcpResponse);
+                printf("%s\n", response);
+                replyToTCP(tcpResponse, client);
                 close(client);
                 free(tcpBuffer);
+                free(tcpResponse);
                 exit(EXIT_SUCCESS);
             }
 
@@ -743,18 +870,6 @@ int main()
             } while (ret == -1 && errno == EINTR);
             if (ret == -1)
                 error("Error closing client");
-            /*tcpBuffer = (char *) malloc(BUFFER_SIZE);
-            if (tcpBuffer == NULL)
-                error("Error on malloc");
-            n = readFromTCP(client, buffer);
-            write(1, "tcp received: ", 14);
-            write(1, buffer, n);
-            handleCommand(buffer, response);
-            printf("%s", response);
-            n = replyToTCP(response, client);
-            printf("%d\n", n);
-            close(client);
-            free(tcpBuffer);*/
         }
     }
 
