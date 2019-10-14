@@ -77,6 +77,8 @@ int readFromTCP(int src, char *buffer) {
     if (nread == -1)
         error("Error reading from tcp socket");
 
+    *(buffer + nbytes - nleft) = '\0';
+
     return nbytes - nleft;
 }
 
@@ -858,6 +860,7 @@ int main()
             write(1, "udp received: ", 14);
             write(1, buffer, transferBytes);
 
+            *(buffer + transferBytes) = '\0';
             handleCommand(buffer, response);
             transferBytes = sendto(client, response, strlen(response), 0, (struct sockaddr *)&addr, addrlen);
             if (transferBytes == -1)
