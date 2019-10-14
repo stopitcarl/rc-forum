@@ -115,7 +115,7 @@ char* handleFile(char *content, int cSize, char *fn);
 char* handleImage(char *content, int cSize, char *fn);
 
 /*  Composes a Data Block consisting of "fSize fData IMG [iExt iSize iData]"
-    fn is assumed to be .txt and in must include extension
+    fn must be .txt and in must include extension
     stores data block size in size
     returns a pointer to null terminated Data Block or null in case of failure */
 char* createDataBlock(char *fn, int IMG, char *in, long *size);

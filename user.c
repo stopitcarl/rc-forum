@@ -339,13 +339,13 @@ void topicListCommand() {
 
     /* Checks if response is valid */
     if (!isValidResponse(response, responseSize)) {
-        printf("ERR1\n");
+        printf("ERR\n");
         return;
     }
 
     /* replaces end of line char with space */
     if (replaceNewLine(response, ' ')) {
-        printf("ERR2\n");
+        printf("ERR\n");
         return;
     }
 
@@ -356,30 +356,30 @@ void topicListCommand() {
 
     /* Checks for LTR */
     if ((nextArg = getNextArg(response, ' ', -1)) == NULL) {
-        printf("ERR3\n");
+        printf("ERR\n");
         return;
     }
     if (strcmp(response, "LTR")) {
-        printf("ERR4\n");
+        printf("ERR\n");
         return;
     }
     arg = nextArg;
 
     /* Gets N */
     if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
-        printf("ERR5\n");
+        printf("ERR\n");
         return;
     }
 
     /* Turns it into a number */
     if ((N = (int) toPositiveNum(arg)) == -1) {
-        printf("ERR6\n");
+        printf("ERR\n");
         return;
     }
 
     /* Checks if number is valid */
     if (N > MAX_TOPICS) {
-        printf("ERR7\n");
+        printf("ERR\n");
         return;
     }
 
@@ -401,13 +401,13 @@ void topicListCommand() {
             if ((nextArg = getNextArg(arg, ':', -1)) == NULL) {
                 freeList(topicList, tlSize);
                 tlSize = 0;
-                printf("ERR8\n");
+                printf("ERR\n");
                 return;
             }
             if (!isValidTopic(arg)) {
                 freeList(topicList, tlSize);
                 tlSize = 0;
-                printf("ERR9\n");
+                printf("ERR\n");
                 return;
             }
             topic = arg;
@@ -418,13 +418,13 @@ void topicListCommand() {
             if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
                 freeList(topicList, tlSize); 
                 tlSize = 0;
-                printf("ERR10\n");
+                printf("ERR\n");
                 return;
             }
             if ((ID = getUserID(arg)) == -1) {
                 freeList(topicList, tlSize);
                 tlSize = 0;
-                printf("ERR11\n");
+                printf("ERR\n");
                 return;
             }
             IDLength = nextArg - arg - 1;
@@ -687,6 +687,7 @@ void questionGetCommand(char *command, int flag) {
     /* Deletes new line character */
     if (deleteNewLine(command)) {
         printf("ERR\n");
+        fflush(stdout);
         return;
     }
 

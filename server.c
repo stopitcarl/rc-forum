@@ -86,7 +86,7 @@ int readFromTCP(int src, char *buffer) {
 /*Writes to tcp socket*/
 int replyToTCP(char *msg, int dst)
 {
-    int nbytes, n, nwritten = 0;
+    long n, nbytes, nwritten = 0;
 
     nbytes = transferBytes;
 
@@ -97,6 +97,8 @@ int replyToTCP(char *msg, int dst)
             error("Error writing to tcp socket");
         nwritten += n;
     }
+
+    printf("Tinha que escrever %ld bytes e escrevi %ld bytes\n", nbytes, nwritten);
 
     return nwritten;
 }
@@ -573,16 +575,30 @@ void questionGetCommand(char *topic, char **response){
         return;
     }
 
-    transferBytes = size + 13;
+    /***************************************************************************
+     * MEXI AQUI
+     * ************************************************************************/
+
+    nAnswers = countAnswers(dirName, questionFile);
+
+    transferBytes = size + 7 + ID_SIZE + digits(nAnswers);
     *response = (char *) realloc(*response, transferBytes + 1);
 
     if (*response == NULL)
         error("Error on realloc");
 
-    nAnswers = countAnswers(dirName, questionFile);
-
-    sprintf(*response, "QGR %s %s %d", id, questionData, nAnswers);
+    char *p;
+    sprintf(*response, "QGR %s ", id);
+    p = *response + 5 + ID_SIZE;
+    memcpy(p, questionData, size);
     free(questionData);
+    p += size;
+    sprintf(p, " %d\n", nAnswers);
+    return;
+
+    /***************************************************************************
+     * PAREI DE MEXER AQUI
+     * ************************************************************************/
 
     /*Gets all the answers to question*/
     for (int i = nAnswers; i > nAnswers - 10 && i > 0; i--) {
