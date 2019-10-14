@@ -21,7 +21,8 @@
 #define QUESTION_LEN 19
 #define SMALL_BUFFER_SIZE 64
 
-int transferBytes, udp, tcp;
+int udp, tcp;
+long transferBytes;
 int nTopics;
 fd_set rfds, afds;
 socklen_t addrlen;
@@ -495,7 +496,7 @@ void questionListCommand(char *topic, char *response) {
 
 // ######## START OF TCP COMMANDS ###########
 
-void questionGetCommand(char *topic, char *response){
+void questionGetCommand(char *topic, char **response){
     char *question, *lastArg;
     char dirName[TOPIC_LEN + 8];
     char testTopic[TOPIC_LEN];
@@ -503,42 +504,41 @@ void questionGetCommand(char *topic, char *response){
     char questionFile[TOPIC_LEN + 9 + TOPIC_LEN + 4];
     char answer[TOPIC_LEN + 2];
     char answerFile[TOPIC_LEN + 9 + TOPIC_LEN + 2 + 4];
-    char imageName[TOPIC_LEN + 9 + TOPIC_LEN + 4];
+    char imageName[TOPIC_LEN + 4];
+    char imageFile[TOPIC_LEN + 9 + TOPIC_LEN + 4];
     char *id;
     char *questionData;
     char *answerData;
-    long size, newSize;
+    long size;
     int IMG, nAnswers;
-
-    puts("quesiton get");
-
-    transferBytes = BUFFER_SIZE;
 
     question = getNextArg(topic, ' ', -1);
     if (question == NULL) {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+        strcpy(*response, "ERR\n");
+        transferBytes = strlen(*response);
         return;
     }
 
     lastArg = getNextArg(question, ' ', -1);
     if (lastArg != NULL) {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+        strcpy(*response, "ERR\n");
+        transferBytes = strlen(*response);
         return;
     }
 
+    testTopic[0] = '\0';
+    testQuestion[0] = '\0';
     findTopic(topic, testTopic);
     sprintf(dirName, "topics/%s", testTopic);
 
     /*Checks if question and topic are correct*/
     if (!isValidTopic(topic) || *testTopic == '\0' || !isValidQuestion(question)) {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+        strcpy(*response, "ERR\n");
+        transferBytes = strlen(*response);
         return;
     } else if (!findQuestion(dirName, question, testQuestion)) {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+        strcpy(*response, "ERR\n");
+        transferBytes = strlen(*response);
         return;
     }
 
@@ -550,56 +550,38 @@ void questionGetCommand(char *topic, char *response){
         ++id;
 
     if (*id == '\0') {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+        strcpy(*response, "ERR\n");
+        transferBytes = strlen(*response);
         return;
     }
-
     id++;
     id[5] = '\0';
 
-
+    imageName[0] = '\0';
     IMG = findImage(dirName, question, imageName);
-
-    printf("%s\n", questionFile);
-    fflush(stdout);
-    printf("%d\n", IMG);
-    fflush(stdout);
-    printf("%ln", &size);
-    fflush(stdout);
+    sprintf(imageFile, "%s/%s", dirName, imageName);
 
     if (!IMG) {
-        puts("!IMG");
         questionData = createDataBlock(questionFile, IMG, NULL, &size);
     } else {
-        puts("IMG");
-        questionData = createDataBlock(questionFile, IMG, imageName, &size);
+        questionData = createDataBlock(questionFile, IMG, imageFile, &size);
     }
 
-    puts("Out of data block");
-
     if (questionData == NULL) {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+        strcpy(*response, "ERR\n");
+        transferBytes = strlen(*response);
         return;
     }
 
-    if (size > transferBytes + 10) {
-        response = (char *) realloc(response, size + 10);
-        transferBytes = size;
-    }
+    transferBytes = size + 13;
+    *response = (char *) realloc(*response, transferBytes + 1);
+
+    if (*response == NULL)
+        error("Error on realloc");
 
     nAnswers = countAnswers(dirName, questionFile);
 
-    printf("id: %s\n", id);
-    fflush(stdout);
-    printf("questionData: %s\n", questionData);
-    fflush(stdout);
-    printf("nAnswers: %d\n", nAnswers);
-    fflush(stdout);
-
-
-    sprintf(response, "QGR %s %s %d ", id, questionData, nAnswers);
+    sprintf(*response, "QGR %s %s %d", id, questionData, nAnswers);
     free(questionData);
 
     /*Gets all the answers to question*/
@@ -607,30 +589,33 @@ void questionGetCommand(char *topic, char *response){
         sprintf(answer, "%s_%02d", question, i);
         sprintf(answerFile, "%s/%s-%s", dirName, answer, id);
 
+        imageName[0] = '\0';
         IMG = findImage(dirName, answer, imageName);
+        sprintf(imageFile, "%s/%s", dirName, imageName);
 
         if (!IMG)
-            answerData = createDataBlock(answerFile, IMG, NULL, &newSize);
+            answerData = createDataBlock(answerFile, IMG, NULL, &size);
         else
-            answerData = createDataBlock(answerFile, IMG, imageName, &newSize);
+            answerData = createDataBlock(answerFile, IMG, imageFile, &size);
 
         if (answerData == NULL) {
-            strcpy(response, "ERR\n");
-            transferBytes = strlen(response);
+            strcpy(*response, "ERR\n");
+            transferBytes = strlen(*response);
             return;
         }
 
-        if (newSize > transferBytes) {
-            response = (char *) realloc(response, newSize);
-            transferBytes = newSize;
-        }
+        transferBytes += size + 1;
+        *response = (char *) realloc(*response, transferBytes);
 
-        strcat(response, " ");
-        strcat(response, answerData);
+        if (*response == NULL)
+            error("Error on realloc");
+
+        strcat(*response, " ");
+        strcat(*response, answerData);
         free(answerData);
     }
 
-    strcat(response, "\n");
+    strcat(*response, "\n");
 }
 
 /*Submits question to a certain topic*/
@@ -752,12 +737,12 @@ void answerSubmitCommand(char *id, char *response) {
 // ######## END OF TCP COMMANDS ###########
 
 
-void handleCommand(char *request, char *response)
+void handleCommand(char *request, char **response)
 {
     char *arg;
 
     if (deleteNewLine(request)) {
-        strcpy(response, "ERR\n");
+        strcpy(*response, "ERR\n");
         return;
     }
 
@@ -768,18 +753,18 @@ void handleCommand(char *request, char *response)
     /* Checks for command type */
     if (!strcmp(request, "REG"))
     {
-        registerCommand(arg, response);
+        registerCommand(arg, *response);
     } else if (!strcmp(request, "LTP"))
     {
-        topicListCommand(response);
+        topicListCommand(*response);
     }
     else if (!strcmp(request, "PTP"))
     {
-        topicProposeCommand(arg, response);
+        topicProposeCommand(arg, *response);
     }
     else if (!strcmp(request, "LQU"))
     {
-        questionListCommand(arg, response);
+        questionListCommand(arg, *response);
     }
     else if (!strcmp(request, "GQU"))
     {
@@ -787,23 +772,23 @@ void handleCommand(char *request, char *response)
     }
     else if (!strcmp(request, "QUS"))
     {
-        questionSubmitCommand(arg, response);
+        questionSubmitCommand(arg, *response);
     }
     else if (!strcmp(request, "ANS"))
     {
-        answerSubmitCommand(arg, response);
+        answerSubmitCommand(arg, *response);
     }
     else
     {
-        strcpy(response, "ERR\n");
+        strcpy(*response, "ERR\n");
     }
 }
 
 int main()
 {
     struct sigaction pipe, intr, child;
-    char response[BUFFER_SIZE];
-    char buffer[BUFFER_SIZE];
+    char *udpResponse;
+    char *udpBuffer;
     char *tcpBuffer, *tcpResponse;
     int n, client;
     pid_t pid;
@@ -848,9 +833,17 @@ int main()
         else if (FD_ISSET(udp, &rfds))
         {
             //Got message from udp server
-            memset(buffer, 0, sizeof buffer);
+            udpBuffer = (char *) malloc(BUFFER_SIZE);
+            if (udpBuffer == NULL)
+                error("Error on malloc");
+
+            udpResponse = (char *) malloc(BUFFER_SIZE);
+            if (udpResponse == NULL)
+                error("Error on malloc");
+
+            memset(udpBuffer, 0, BUFFER_SIZE);
             addrlen = sizeof(addr);
-            transferBytes = recvfrom(udp, buffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
+            transferBytes = recvfrom(udp, udpBuffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
             if (transferBytes == -1)
                 error("Error receiving from udp socket");
 
@@ -858,13 +851,15 @@ int main()
             client = udp;
 
             write(1, "udp received: ", 14);
-            write(1, buffer, transferBytes);
+            write(1, udpBuffer, transferBytes);
 
-            *(buffer + transferBytes) = '\0';
-            handleCommand(buffer, response);
-            transferBytes = sendto(client, response, strlen(response), 0, (struct sockaddr *)&addr, addrlen);
+            *(udpBuffer + transferBytes) = '\0';
+            handleCommand(udpBuffer, &udpResponse);
+            transferBytes = sendto(client, udpResponse, strlen(udpResponse), 0, (struct sockaddr *)&addr, addrlen);
             if (transferBytes == -1)
                 error("Error writing to udp socket");
+            free(udpBuffer);
+            free(udpResponse);
         }
 
         else if (FD_ISSET(tcp, &rfds))
@@ -880,15 +875,19 @@ int main()
                 error("Error on fork");
             else if (pid == 0) {
                 close(tcp);
+
                 tcpBuffer = (char *) malloc(BUFFER_SIZE);
-                tcpResponse = (char *) malloc(BUFFER_SIZE);
                 if (tcpBuffer == NULL)
+                    error("Error on malloc");
+
+                tcpResponse = (char *) malloc(BUFFER_SIZE);
+                if (tcpResponse == NULL)
                     error("Error on malloc");
 
                 transferBytes = readFromTCP(client, tcpBuffer);
                 write(1, "tcp received: ", 14);
                 write(1, tcpBuffer, transferBytes);
-                handleCommand(tcpBuffer, tcpResponse);
+                handleCommand(tcpBuffer, &tcpResponse);
                 printf("%s\n", tcpResponse);
                 replyToTCP(tcpResponse, client);
                 close(client);
