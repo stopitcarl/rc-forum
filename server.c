@@ -505,8 +505,10 @@ void questionGetCommand(char *topic, char *response){
     char *id;
     char *questionData;
     char *answerData;
-    long *size = NULL, *newSize = NULL;
+    long size, newSize;
     int IMG, nAnswers;
+
+    puts("quesiton get");
 
     transferBytes = BUFFER_SIZE;
 
@@ -542,18 +544,37 @@ void questionGetCommand(char *topic, char *response){
 
     /*Gets id from question file*/
     id = testQuestion;
-    while (*id != '-')
-        id++;
+    while (*id != '-' && *id != '\0')
+        ++id;
+
+    if (*id == '\0') {
+        strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
+        return;
+    }
+
     id++;
     id[5] = '\0';
 
 
     IMG = findImage(dirName, question, imageName);
 
-    if (!IMG)
-        questionData = createDataBlock(questionFile, IMG, NULL, size);
-    else
-        questionData = createDataBlock(questionFile, IMG, imageName, size);
+    printf("%s\n", questionFile);
+    fflush(stdout);
+    printf("%d\n", IMG);
+    fflush(stdout);
+    printf("%ln", &size);
+    fflush(stdout);
+
+    if (!IMG) {
+        puts("!IMG");
+        questionData = createDataBlock(questionFile, IMG, NULL, &size);
+    } else {
+        puts("IMG");
+        questionData = createDataBlock(questionFile, IMG, imageName, &size);
+    }
+
+    puts("Out of data block");
 
     if (questionData == NULL) {
         strcpy(response, "ERR\n");
@@ -561,12 +582,20 @@ void questionGetCommand(char *topic, char *response){
         return;
     }
 
-    while (*size > transferBytes + 10) {
+    while (size > transferBytes + 10) {
         transferBytes += BUFFER_SIZE;
         response = (char *) realloc(response, transferBytes + 10);
     }
 
     nAnswers = countAnswers(dirName, questionFile);
+
+    printf("id: %s\n", id);
+    fflush(stdout);
+    printf("questionData: %s\n", questionData);
+    fflush(stdout);
+    printf("nAnswers: %d\n", nAnswers);
+    fflush(stdout);
+
 
     sprintf(response, "QGR %s %s %d ", id, questionData, nAnswers);
     free(questionData);
@@ -579,9 +608,9 @@ void questionGetCommand(char *topic, char *response){
         IMG = findImage(dirName, answer, imageName);
 
         if (!IMG)
-            answerData = createDataBlock(answerFile, IMG, NULL, newSize);
+            answerData = createDataBlock(answerFile, IMG, NULL, &newSize);
         else
-            answerData = createDataBlock(answerFile, IMG, imageName, newSize);
+            answerData = createDataBlock(answerFile, IMG, imageName, &newSize);
 
         if (answerData == NULL) {
             strcpy(response, "ERR\n");
@@ -589,9 +618,9 @@ void questionGetCommand(char *topic, char *response){
             return;
         }
 
-        while (*newSize > *size) {
-            *size += BUFFER_SIZE;
-            response = (char *) realloc(response, *size);
+        while (newSize > size) {
+            size += BUFFER_SIZE;
+            response = (char *) realloc(response, size);
         }
 
         strcat(response, " ");
@@ -857,9 +886,10 @@ int main()
                 write(1, "tcp received: ", 14);
                 write(1, tcpBuffer, transferBytes);
                 handleCommand(tcpBuffer, tcpResponse);
-                printf("%s\n", response);
+                printf("%s\n", tcpResponse);
                 replyToTCP(tcpResponse, client);
                 close(client);
+                freeaddrinfo(res);
                 free(tcpBuffer);
                 free(tcpResponse);
                 exit(EXIT_SUCCESS);
