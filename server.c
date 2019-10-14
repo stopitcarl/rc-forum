@@ -584,9 +584,9 @@ void questionGetCommand(char *topic, char *response){
         return;
     }
 
-    while (size > transferBytes + 10) {
-        transferBytes += BUFFER_SIZE;
-        response = (char *) realloc(response, transferBytes + 10);
+    if (size > transferBytes + 10) {
+        response = (char *) realloc(response, size + 10);
+        transferBytes = size;
     }
 
     nAnswers = countAnswers(dirName, questionFile);
@@ -620,9 +620,9 @@ void questionGetCommand(char *topic, char *response){
             return;
         }
 
-        while (newSize > size) {
-            size += BUFFER_SIZE;
-            response = (char *) realloc(response, size);
+        if (newSize > transferBytes) {
+            response = (char *) realloc(response, newSize);
+            transferBytes = newSize;
         }
 
         strcat(response, " ");
