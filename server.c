@@ -19,7 +19,6 @@
 #define BUFFER_SIZE 1024
 #define TOPIC_LEN 16
 #define QUESTION_LEN 19
-#define SMALL_BUFFER_SIZE 64
 
 int udp, tcp;
 long transferBytes;
@@ -56,29 +55,29 @@ void waitChild() {
 }
 
 /*Reads from the tcp socket*/
-int readFromTCP(int src, char *buffer) {
+int readFromTCP(int src, char **buffer) {
     int nbytes, nleft, nread;
 
     nbytes = BUFFER_SIZE;
     nleft = nbytes;
 
     /*Makes sure the entire message is read*/
-    while ((nread = read(src, buffer + nbytes - nleft, nleft)) > 0) {
+    while ((nread = read(src, *buffer + nbytes - nleft, nleft)) > 0) {
         nleft -= nread;
         if (nleft == 0) {
             nleft = BUFFER_SIZE;
             nbytes += BUFFER_SIZE;
-            if ((buffer = (char *) realloc(buffer, nbytes)) == NULL)
+            if ((*buffer = (char *) realloc(*buffer, nbytes)) == NULL)
                 error("Error on realloc");
         }
 
-        if (*(buffer + nbytes - nleft - 1) == '\n') break;
+        if (*(*buffer + nbytes - nleft - 1) == '\n') break;
     }
 
     if (nread == -1)
         error("Error reading from tcp socket");
 
-    *(buffer + nbytes - nleft) = '\0';
+    *(*buffer + nbytes - nleft) = '\0';
 
     return nbytes - nleft;
 }
@@ -97,8 +96,6 @@ int replyToTCP(char *msg, int dst)
             error("Error writing to tcp socket");
         nwritten += n;
     }
-
-    printf("Tinha que escrever %ld bytes e escrevi %ld bytes\n", nbytes, nwritten);
 
     return nwritten;
 }
@@ -176,7 +173,8 @@ int countQuestions(char *dirName) {
 
     /*Counts number questions in certain topic*/
     while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_REG && strchr(entry->d_name, '_') == NULL) {
+        if (entry->d_type == DT_REG && strchr(entry->d_name, '_') == NULL &&
+                strstr(entry->d_name, ".txt") != NULL) {
             count++;
         }
     }
@@ -189,7 +187,10 @@ int countQuestions(char *dirName) {
 int countAnswers(char *dirName, char *question) {
     DIR *dir;
     struct dirent *entry;
+    char holder[TOPIC_LEN];
     int count = 0;
+
+    strcpy(holder, question);
 
     /*Opens directory*/
     if (!(dir = opendir(dirName)))
@@ -197,9 +198,11 @@ int countAnswers(char *dirName, char *question) {
 
     /*Counts number of answers to a certain question*/
     while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_REG && strchr(entry->d_name, '_') != NULL &&
-                !strcmp(strtok(entry->d_name, "_"), strtok(question, "-"))) {
-            count++;
+        if (entry->d_type == DT_REG && strchr(entry->d_name, '_') != NULL) {
+            if (strstr(entry->d_name, ".txt") != NULL &&
+                    !strcmp(strtok(entry->d_name, "_"), strtok(holder, "-"))) {
+                count++;
+            }
         }
     }
 
@@ -247,12 +250,14 @@ int findImage(char *dirName, char *question, char *imageName) {
             if (!strcmp(strtok(testFile, "-"), question)) {
                 if (strstr(entry->d_name, ".txt") == NULL) {
                     strcpy(imageName, entry->d_name);
+                    closedir(dir);
                     return 1;
                 }
             }
         }
     }
 
+    closedir(dir);
     return 0;
 }
 // ######## END OF AUX FUNCTIONS ###########
@@ -332,6 +337,7 @@ void findTopic(char *topic, char *dirName) {
             name = strtok(aux, "-");
             if (!strcmp(topic, name)) {
                 strcpy(dirName, entry->d_name);
+                closedir(dir);
                 return;
             }
         }
@@ -359,10 +365,13 @@ int findQuestion(char *topicDir, char *question, char *fileName) {
             if (!strcmp(strtok(testFile, "-"), question) &&
                     strstr(entry->d_name, ".txt") != NULL) {
                 if (fileName != NULL) strcpy(fileName, entry->d_name);
+                closedir(dir);
                 return 1;
             }
         }
     }
+
+    closedir(dir);
 
     return 0;
 }
@@ -379,10 +388,14 @@ int findAnswer(char *topicDir, char *answer) {
     /*Cycles through the topic's directory*/
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type == DT_REG && strchr(entry->d_name, '_') != NULL) {
-            if (!strcmp(strtok(entry->d_name, "-"), answer))
+            if (!strcmp(strtok(entry->d_name, "-"), answer)) {
+                closedir(dir);
                 return 1;
+            }
         }
     }
+
+    closedir(dir);
 
     return 0;
 }
@@ -514,6 +527,7 @@ void questionGetCommand(char *topic, char **response){
     long size;
     int IMG, nAnswers;
 
+    /*Gets arguments from message*/
     question = getNextArg(topic, ' ', -1);
     if (question == NULL) {
         strcpy(*response, "ERR\n");
@@ -559,10 +573,12 @@ void questionGetCommand(char *topic, char **response){
     id++;
     id[5] = '\0';
 
+    /*Gets corresponding image if it exists*/
     imageName[0] = '\0';
     IMG = findImage(dirName, question, imageName);
     sprintf(imageFile, "%s/%s", dirName, imageName);
 
+    /*Creates string with file data*/
     if (!IMG) {
         questionData = createDataBlock(questionFile, IMG, NULL, &size);
     } else {
@@ -575,35 +591,27 @@ void questionGetCommand(char *topic, char **response){
         return;
     }
 
-    /***************************************************************************
-     * MEXI AQUI
-     * ************************************************************************/
-
-    nAnswers = countAnswers(dirName, questionFile);
+    /*Adds data to the response*/
+    nAnswers = countAnswers(dirName, testQuestion);
 
     transferBytes = size + 7 + ID_SIZE + digits(nAnswers);
     *response = (char *) realloc(*response, transferBytes + 1);
-
     if (*response == NULL)
         error("Error on realloc");
 
-    char *p;
-    sprintf(*response, "QGR %s ", id);
-    p = *response + 5 + ID_SIZE;
+    char *p = *response;
+    sprintf(p, "QGR %s ", id);
+    p += 5 + ID_SIZE;
     memcpy(p, questionData, size);
     free(questionData);
     p += size;
-    sprintf(p, " %d\n", nAnswers);
-    return;
-
-    /***************************************************************************
-     * PAREI DE MEXER AQUI
-     * ************************************************************************/
+    sprintf(p, " %d", nAnswers);
+    p += 2;
 
     /*Gets all the answers to question*/
-    for (int i = nAnswers; i > nAnswers - 10 && i > 0; i--) {
+    for (int i = nAnswers; i > nAnswers - MAX_ANSWERS && i > 0; i--) {
         sprintf(answer, "%s_%02d", question, i);
-        sprintf(answerFile, "%s/%s-%s", dirName, answer, id);
+        sprintf(answerFile, "%s/%s-%s.txt", dirName, answer, id);
 
         imageName[0] = '\0';
         IMG = findImage(dirName, answer, imageName);
@@ -621,17 +629,20 @@ void questionGetCommand(char *topic, char **response){
         }
 
         transferBytes += size + 1;
-        *response = (char *) realloc(*response, transferBytes);
+        *response = (char *) realloc(*response, transferBytes + 1);
 
         if (*response == NULL)
             error("Error on realloc");
 
-        strcat(*response, " ");
-        strcat(*response, answerData);
+        p = *response + transferBytes - size - 2;
+        *p = ' ';
+        p++;
+        memcpy(p, answerData, size);
         free(answerData);
+        p += size;
     }
 
-    strcat(*response, "\n");
+    sprintf(p, "\n");
 }
 
 /*Submits question to a certain topic*/
@@ -647,18 +658,21 @@ void questionSubmitCommand(char *id, char *response) {
     topic = getNextArg(id, ' ', -1);
     if (topic == NULL) {
         strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
         return;
     }
 
     question = getNextArg(topic, ' ', -1);
     if (question == NULL) {
         strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
         return;
     }
 
     data = getNextArg(question, ' ', -1);
     if (data == NULL) {
         strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
         return;
     }
     findTopic(topic, testTopic);
@@ -669,27 +683,29 @@ void questionSubmitCommand(char *id, char *response) {
     if (!isValidID(id) || !isValidTopic(topic) || *testTopic == '\0' ||
             !isValidQuestion(question)) {
         strcpy(response, "QUR NOK\n");
+        transferBytes = strlen(response);
         return;
     } else if (findQuestion(dirName, question, NULL)) {
         strcpy(response, "QUR DUP\n");
+        transferBytes = strlen(response);
         return;
-    } else if ((nQuestions = countQuestions(dirName)) == 99) {
+    } else if ((nQuestions = countQuestions(dirName)) == MAX_TOPICS) {
         strcpy(response, "QUR FUL\n");
+        transferBytes = strlen(response);
         return;
     }
 
     sprintf(questionName, "%s/%s-%s", dirName, question, id);
 
-    strcat(data, " ");
-
-    //lSize = atol(size);
     ret = parseDataBlock(data, transferBytes, questionName);
     if (ret == NULL) {
         strcpy(response, "QUR NOK\n");
+        transferBytes = strlen(response);
         return;
     }
 
     strcpy(response, "QUR OK\n");
+    transferBytes = strlen(response);
 }
 
 /*Submits answer to a certain question*/
@@ -706,18 +722,21 @@ void answerSubmitCommand(char *id, char *response) {
     topic = getNextArg(id, ' ', -1);
     if (topic == NULL) {
         strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
         return;
     }
 
     question = getNextArg(topic, ' ', -1);
     if (question == NULL) {
         strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
         return;
     }
 
     data = getNextArg(question, ' ', -1);
     if (data == NULL) {
         strcpy(response, "ERR\n");
+        transferBytes = strlen(response);
         return;
     }
     findTopic(topic, testTopic);
@@ -729,25 +748,29 @@ void answerSubmitCommand(char *id, char *response) {
     if (!isValidID(id) || !isValidTopic(topic) || *testTopic == '\0' ||
             !isValidQuestion(question)) {
         strcpy(response, "ANR NOK\n");
+        transferBytes = strlen(response);
         return;
     } else if (!findQuestion(dirName, question, NULL)) {
         strcpy(response, "ANR NOK\n");
+        transferBytes = strlen(response);
         return;
-    } else if ((nAnswers = countAnswers(dirName, questionName)) == 99) {
+    } else if ((nAnswers = countAnswers(dirName, questionName)) == MAX_TOPICS) {
         strcpy(response, "ANR FUL\n");
+        transferBytes = strlen(response);
         return;
     }
 
-    strcat(data, " ");
     sprintf(answerName, "%s/%s_%02d-%s",dirName, question, ++nAnswers, id);
 
     ret = parseDataBlock(data, transferBytes, answerName);
     if (ret == NULL) {
-        strcpy(response, "QUR NOK\n");
+        strcpy(response, "ANR NOK\n");
+        transferBytes = strlen(response);
         return;
     }
 
     strcpy(response, "ANR OK\n");
+    transferBytes = strlen(response);
 }
 
 // ######## END OF TCP COMMANDS ###########
@@ -755,43 +778,97 @@ void answerSubmitCommand(char *id, char *response) {
 
 void handleCommand(char *request, char **response)
 {
+    char code[4];
     char *arg;
+    int i;
 
-    if (deleteNewLine(request)) {
-        strcpy(*response, "ERR\n");
-        return;
+    /*Gets message code*/
+    for (i = 0; i < 3; i++) {
+        code[i] = request[i];
     }
-
-
-    /* Gets command name */
-    arg = getNextArg(request, ' ', -1);
+    code[i] = '\0';
 
     /* Checks for command type */
-    if (!strcmp(request, "REG"))
+    if (!strcmp(code, "REG"))
     {
+        if (deleteNewLine(request)) {
+            strcpy(*response, "ERR\n");
+            return;
+        }
+        /* Gets command name */
+        arg = getNextArg(request, ' ', -1);
+
         registerCommand(arg, *response);
-    } else if (!strcmp(request, "LTP"))
+    } else if (!strcmp(code, "LTP"))
     {
+        if (deleteNewLine(request)) {
+            strcpy(*response, "ERR\n");
+            return;
+        }
+        /* Gets command name */
+        arg = getNextArg(request, ' ', -1);
+
         topicListCommand(*response);
     }
-    else if (!strcmp(request, "PTP"))
+    else if (!strcmp(code, "PTP"))
     {
+        if (deleteNewLine(request)) {
+            strcpy(*response, "ERR\n");
+            return;
+        }
+        /* Gets command name */
+        arg = getNextArg(request, ' ', -1);
+
         topicProposeCommand(arg, *response);
     }
-    else if (!strcmp(request, "LQU"))
+    else if (!strcmp(code, "LQU"))
     {
+        if (deleteNewLine(request)) {
+            strcpy(*response, "ERR\n");
+            return;
+        }
+        /* Gets command name */
+        arg = getNextArg(request, ' ', -1);
+
         questionListCommand(arg, *response);
     }
-    else if (!strcmp(request, "GQU"))
+    else if (!strcmp(code, "GQU"))
     {
+        if (deleteNewLine(request)) {
+            strcpy(*response, "ERR\n");
+            transferBytes = strlen(*response);
+            return;
+        }
+        /* Gets command name */
+        arg = getNextArg(request, ' ', -1);
+
         questionGetCommand(arg, response);
     }
-    else if (!strcmp(request, "QUS"))
+    /*Messages that include files must be checked more carefully*/
+    else if (!strcmp(code, "QUS"))
     {
+        if (request[transferBytes - 1] != '\n') {
+            strcpy(*response, "ERR\n");
+            transferBytes = strlen(*response);
+            return;
+        }
+        sprintf(request + transferBytes - 1, " ");
+        /* Gets command name */
+        arg = getNextArg(request, ' ', -1);
+
         questionSubmitCommand(arg, *response);
     }
-    else if (!strcmp(request, "ANS"))
+    else if (!strcmp(code, "ANS"))
     {
+        if (request[transferBytes - 1] != '\n') {
+            strcpy(*response, "ERR\n");
+            transferBytes = strlen(*response);
+            return;
+        }
+        sprintf(request + transferBytes - 1, " ");
+        /* Gets command name */
+        arg = getNextArg(request, ' ', -1);
+
         answerSubmitCommand(arg, *response);
     }
     else
@@ -900,7 +977,7 @@ int main()
                 if (tcpResponse == NULL)
                     error("Error on malloc");
 
-                transferBytes = readFromTCP(client, tcpBuffer);
+                transferBytes = readFromTCP(client, &tcpBuffer);
                 write(1, "tcp received: ", 14);
                 write(1, tcpBuffer, transferBytes);
                 handleCommand(tcpBuffer, &tcpResponse);
