@@ -525,7 +525,7 @@ void questionGetCommand(char *topic, char **response){
     char *questionData;
     char *answerData;
     long size;
-    int IMG, nAnswers;
+    int IMG, nAnswers, N;
 
     /*Gets arguments from message*/
     question = getNextArg(topic, ' ', -1);
@@ -563,7 +563,7 @@ void questionGetCommand(char *topic, char **response){
     /*Gets id from question file*/
     id = testQuestion;
     while (*id != '-' && *id != '\0')
-        ++id;
+        id++;
 
     if (*id == '\0') {
         strcpy(*response, "ERR\n");
@@ -593,8 +593,12 @@ void questionGetCommand(char *topic, char **response){
 
     /*Adds data to the response*/
     nAnswers = countAnswers(dirName, testQuestion);
+    if (nAnswers >= 10)
+        N = 10;
+    else
+        N = nAnswers;
 
-    transferBytes = size + 7 + ID_SIZE + digits(nAnswers);
+    transferBytes = size + 7 + ID_SIZE + digits(N);
     *response = (char *) realloc(*response, transferBytes + 1);
     if (*response == NULL)
         error("Error on realloc");
@@ -605,17 +609,32 @@ void questionGetCommand(char *topic, char **response){
     memcpy(p, questionData, size);
     free(questionData);
     p += size;
-    sprintf(p, " %d", nAnswers);
-    p += 2;
+    sprintf(p, " %d", N);
+    p += 1 + digits(N);
 
     /*Gets all the answers to question*/
     for (int i = nAnswers; i > nAnswers - MAX_ANSWERS && i > 0; i--) {
+        char *AN;
+
         sprintf(answer, "%s_%02d", question, i);
         sprintf(answerFile, "%s/%s-%s.txt", dirName, answer, id);
 
         imageName[0] = '\0';
         IMG = findImage(dirName, answer, imageName);
         sprintf(imageFile, "%s/%s", dirName, imageName);
+
+        /*Gets answer number from answer file*/
+        AN = answer;
+        while (*AN != '_' && *AN != '\0')
+            AN++;
+
+        if (*AN == '\0') {
+            strcpy(*response, "ERR\n");
+            transferBytes = strlen(*response);
+            return;
+        }
+        AN++;
+        AN[2] = '\0';
 
         if (!IMG)
             answerData = createDataBlock(answerFile, IMG, NULL, &size);
@@ -628,15 +647,16 @@ void questionGetCommand(char *topic, char **response){
             return;
         }
 
-        transferBytes += size + 1;
+        /*Adds the answer to the response*/
+        transferBytes += size + 5 + ID_SIZE;
         *response = (char *) realloc(*response, transferBytes + 1);
 
         if (*response == NULL)
             error("Error on realloc");
 
-        p = *response + transferBytes - size - 2;
-        *p = ' ';
-        p++;
+        p = *response + transferBytes - size - 6 - ID_SIZE;
+        sprintf(p, " %s %s ", AN, id);
+        p += 5 + ID_SIZE;
         memcpy(p, answerData, size);
         free(answerData);
         p += size;
