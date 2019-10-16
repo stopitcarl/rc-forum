@@ -736,6 +736,7 @@ void answerSubmitCommand(char *id, char *response) {
     char answerName[TOPIC_LEN + 9 + TOPIC_LEN + 4 + 3];
     char questionName[TOPIC_LEN + 9 + TOPIC_LEN + 4];
     char testTopic[TOPIC_LEN];
+    char testQuestion[TOPIC_LEN + 4];
     int nAnswers;
 
     /*Get arguments*/
@@ -770,11 +771,11 @@ void answerSubmitCommand(char *id, char *response) {
         strcpy(response, "ANR NOK\n");
         transferBytes = strlen(response);
         return;
-    } else if (!findQuestion(dirName, question, NULL)) {
+    } else if (!findQuestion(dirName, question, testQuestion)) {
         strcpy(response, "ANR NOK\n");
         transferBytes = strlen(response);
         return;
-    } else if ((nAnswers = countAnswers(dirName, questionName)) == MAX_TOPICS) {
+    } else if ((nAnswers = countAnswers(dirName, testQuestion)) == MAX_TOPICS) {
         strcpy(response, "ANR FUL\n");
         transferBytes = strlen(response);
         return;
