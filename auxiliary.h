@@ -16,6 +16,7 @@
 #include <sys/time.h>
 
 #define BUFFER_SIZE 1024
+#define BUFFER_SIZE_L 2048
 #define MAX_PORT_SIZE 10
 #define ID_SIZE 5
 #define TOPIC_SIZE 10
@@ -26,7 +27,8 @@
 #define MAX_TOPICS 99
 #define MAX_ANSWERS 10
 #define MAX_FILE_SIZE 9999999999
-#define TIMEOUT 5
+#define MAX_FILE_SIZE_LENGTH 10
+#define TIMEOUT 10
 
 /*  Turns a string into a number
     returns number or -1 in case of error */
@@ -100,19 +102,18 @@ char **initList(int n);
 void freeList(char **l, long size);
 
 /*  Parses a Data Block consisting of "fSize fData IMG [iExt iSize iData]"
-    content must be null terminated and have a space before null terminator
     fn is the name of the file where data is going to be stored in
     function handles extensions (file assumed to be .txt)
     returns a pointer to end of string or null in case of failure */
-char* parseDataBlock(char *content, long cSize, char *fn);
+int parseDataBlock(int fd, char *fn);
 
 /*  Handles the image portion of the Data Block "ext size data"
     return a pointer to end of portion or null in case of failure */
-char* handleFile(char *content, int cSize, char *fn);
+int handleFile(int fd, char *fn);
 
 /*  Handles the file portion of the Data Block "size data"
     returns a pointer to end of portion or null in case of failure */
-char* handleImage(char *content, int cSize, char *fn);
+char* handleImage(int fd, char *fn);
 
 /*  Composes a Data Block consisting of "fSize fData IMG [iExt iSize iData]"
     fn must be .txt and in must include extension
@@ -124,3 +125,11 @@ char* createDataBlock(char *fn, int IMG, char *in, long *size);
     size stores the size of data
     returns NULL in case of failure */
 char* readFromFile(char *fn, long *size);
+
+/* Writes size amount of bytes in file pointed by fd */
+void writeBytes(int fd, char *bytes, long size);
+
+/*  Reads size - 1 amount of bytes from file pointed by fd
+    Null terminates buffer
+    Returns number of bytes read */
+int readBytes(int fd, char *buffer, long size);
