@@ -16,7 +16,6 @@
 #include "auxiliary.h"
 
 #define PORT "58044"
-#define BUFFER_SIZE 1024
 #define TOPIC_LEN 16
 #define QUESTION_LEN 19
 
@@ -55,31 +54,45 @@ void waitChild() {
 }
 
 /*Reads from the tcp socket*/
-int readFromTCP(int src, char **buffer) {
-    int nbytes, nleft, nread;
-
-    nbytes = BUFFER_SIZE;
-    nleft = nbytes;
-
-    /*Makes sure the entire message is read*/
-    while ((nread = read(src, *buffer + nbytes - nleft, nleft)) > 0) {
-        nleft -= nread;
-        if (nleft == 0) {
-            nleft = BUFFER_SIZE;
-            nbytes += BUFFER_SIZE;
-            if ((*buffer = (char *) realloc(*buffer, nbytes)) == NULL)
-                error("Error on realloc");
-        }
-
-        if (*(*buffer + nbytes - nleft - 1) == '\n') break;
+int readFromTCP(int src, char *buffer, int nbytes) {
+    int nread, nleft = nbytes;    
+    
+    if(nbytes > BUFFER_SIZE){
+        error("readFromTCP too big for buffer");
+        return 0;
     }
+    nread = 0;
+    if (nbytes < 0){
+        while(1) {
+        nread += read(src, buffer + nread, 1);
+            
+        if (nread == -1)
+            error("Error reading byte-by-byte from tcp socket");
+        else if (nread == BUFFER_SIZE)            
+            return -1;
+                
+        if(buffer[nread-1] == ' ' || buffer[nread-1] == '\n'){
+            nbytes = nread;
+            break;
+        }
+    }
+    }else    
+    /* Makes sure the entire message is read */
+    while(nleft>0){
+        // Read nleft bytes
+        nread = read(src, buffer + nbytes - nleft, nleft);
+        nleft -= nread;
+        if (nread == 0) 
+            error("Coutinho was wrong");  // TODO: remove Coutinho warnings
 
-    if (nread == -1)
-        error("Error reading from tcp socket");
+        if (nread == -1)
+            error("Error reading from tcp socket");
+    }
+    write(1, "Read: ", 6);    
+    write(1, buffer, nbytes);
+    write(1, "\n", 1);
 
-    *(*buffer + nbytes - nleft) = '\0';
-
-    return nbytes - nleft;
+    return nbytes;
 }
 
 /*Writes to tcp socket*/
@@ -87,7 +100,7 @@ int replyToTCP(char *msg, int dst)
 {
     long n, nbytes, nwritten = 0;
 
-    nbytes = transferBytes;
+    nbytes = strlen(msg);
 
     /*Makes sure the entire message is written*/
     while (nwritten < nbytes) {
@@ -96,6 +109,10 @@ int replyToTCP(char *msg, int dst)
             error("Error writing to tcp socket");
         nwritten += n;
     }
+
+    write(1, "Sent: ", 6);    
+    write(1, msg, nwritten);
+    write(1, "\n", 1);
 
     return nwritten;
 }
@@ -260,6 +277,34 @@ int findImage(char *dirName, char *question, char *imageName) {
     closedir(dir);
     return 0;
 }
+
+// args: filename(char*), client(int), data (char[] buffer), filesize(long)
+int receiveAndWriteFile(char* filename, int client, char* buffer, long filesize){
+   
+    int bytesReaded = 0, ret;
+
+    FILE *f = fopen(filename, "w");    
+    if (f == NULL) {
+            error("ERROR: fopen");
+            exit(EXIT_FAILURE);            
+    }    
+    
+    do{        
+        // Read buffer
+        bytesReaded = readFromTCP(client, buffer, filesize > BUFFER_SIZE ? BUFFER_SIZE : filesize);
+        filesize -= bytesReaded;
+        // Write to file
+        if ((ret = fwrite(buffer, sizeof(char), bytesReaded, f)) < bytesReaded) {
+            fclose(f);
+            return -1;
+        }
+        // Repeat        
+    } while (filesize > 0);
+    fclose(f);
+
+    return 0;
+}
+
 // ######## END OF AUX FUNCTIONS ###########
 
 
@@ -337,7 +382,6 @@ void findTopic(char *topic, char *dirName) {
             name = strtok(aux, "-");
             if (!strcmp(topic, name)) {
                 strcpy(dirName, entry->d_name);
-                printf(":%s: find topic\n", entry->d_name);
                 closedir(dir);
                 return;
             }
@@ -667,67 +711,158 @@ void questionGetCommand(char *topic, char **response){
     sprintf(p, "\n");
 }
 
-/*Submits question to a certain topic*/
-void questionSubmitCommand(char *id, char *response) {
-    char *topic, *question, *data;
-    char *ret;
+/*
+Submits question to a certain topic
+Format:
+QUS  qUserID  topic  question  qsize  qdata  qIMG  [iext isize idata]\n
+  |
+./topics/'topic'-id/'question'-'id'.txt
+*/
+
+void questionSubmitCommand(char *buffer, int client) {
+    char id[ID_SIZE + 1];
+    char topic[TOPIC_SIZE + 1];
+    char question[TOPIC_SIZE + 1];
+    char qsize[TOPIC_SIZE + 1];
+    long filesize;
+    char data[BUFFER_SIZE];
     char dirName[TOPIC_LEN + 8];
     char questionName[TOPIC_LEN + 9 + TOPIC_LEN + 5];
-    char testTopic[TOPIC_LEN + 1];
-    int nQuestions;
+    char testTopic[TOPIC_LEN + 1];    
+    int nQuestions, bytesReaded, qIMG;
 
     /*Get arguments*/
-    topic = getNextArg(id, ' ', -1);
-    if (topic == NULL) {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+    bytesReaded = readFromTCP(client, id, -1);
+    if (bytesReaded > ID_SIZE + 1 || id[bytesReaded - 1] != ' ') {
+        replyToTCP("QUR NOK\n", client);
         return;
     }
+    id[bytesReaded - 1] = '\0';
 
-    question = getNextArg(topic, ' ', -1);
-    if (question == NULL) {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+    // Reading topic
+    bytesReaded = readFromTCP(client, topic, -1);
+    if (bytesReaded > TOPIC_SIZE + 1 || topic[bytesReaded - 1] != ' ') {
+        replyToTCP("QUR NOK\n", client);
         return;
     }
+    topic[bytesReaded - 1] = '\0';
 
-    data = getNextArg(question, ' ', -1);
-    if (data == NULL) {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+    //Reading question
+    bytesReaded = readFromTCP(client, question, -1);
+    if (bytesReaded > TOPIC_SIZE + 1 || question[bytesReaded - 1] != ' ') {
+        replyToTCP("QUR NOK\n", client);
         return;
     }
+    question[bytesReaded - 1] = '\0';
+    
+    // Reading qsize
+    bytesReaded = readFromTCP(client, qsize,-1);
+    if (bytesReaded > TOPIC_SIZE + 1 || qsize[bytesReaded - 1] != ' ') {
+        replyToTCP("QUR NOK\n", client);
+        return;
+    }
+    qsize[bytesReaded - 1] = '\0';    
+    if ((filesize = toPositiveNum(qsize)) == -1 || filesize > MAX_FILE_SIZE) {
+        replyToTCP("QUR NOK\n", client);
+        return;
+    }
+    
+    // sets testTopic to 'topic'-id
     findTopic(topic, testTopic);
 
-    sprintf(dirName, "topics/%s", testTopic);
+    sprintf(dirName, "topics/%s", testTopic); 
+    // dirname = "./topics/$(topic)-id/"
 
-    /*Checks if id and topic are correct*/
+    // Checks if id and topic are correct
     if (!isValidID(id) || !isValidTopic(topic) || *testTopic == '\0' ||
             !isValidQuestion(question)) {
-        strcpy(response, "QUR NOK\n");
-        transferBytes = strlen(response);
+        replyToTCP("QUR NOK\n", client);
         return;
-    } else if (findQuestion(dirName, question, NULL)) {
-        strcpy(response, "QUR DUP\n");
-        transferBytes = strlen(response);
+    }
+    // Checks if question $(question) exists
+     else if (findQuestion(dirName, question, NULL)) {
+        replyToTCP("QUR DUP\n", client);
         return;
+    // Checks if max number of questions has been reached
     } else if ((nQuestions = countQuestions(dirName)) == MAX_TOPICS) {
-        strcpy(response, "QUR FUL\n");
-        transferBytes = strlen(response);
+        replyToTCP("QUR FUL\n", client);
         return;
     }
+    
+    // Create question name = dir/name.txt
+    sprintf(questionName, "%s/%s-%s.txt", dirName, question, id);
+    
+    
+    /* Stores data in file */
+    // args: filename(char*), client(int), data (char[] buffer), filesize(long)
+    if (receiveAndWriteFile(questionName, client, data, filesize) != 0){
+        error("Error writing file to disk");    
+    }    
 
-    sprintf(questionName, "%s/%s-%s", dirName, question, id);
-
-    ret = parseDataBlock(data, transferBytes, questionName);
-    if (ret == NULL) {
-        strcpy(response, "QUR NOK\n");
-        transferBytes = strlen(response);
+    // Read qIMG flag
+    bytesReaded = readFromTCP(client, data, 3);
+    // Check if qIMG is surrounded by spaces
+    if (data[bytesReaded - 1] != ' ' || data[0] != ' ') {
+        replyToTCP("QUR NOK\n", client);
         return;
     }
+    // Check if qIMG is 0 or 1
+    data[0] = data[1];  // Shift...
+    data[1] = '\0'; //  ... chars to left
+    // Check if qIMG is 0 or 1
+    if (!((qIMG = (int) toPositiveNum(data)) == 0 || qIMG == 1)) {
+        replyToTCP("QUR NOK\n", client);
+        return;
+    }
+    
+    // If qIMG is 1
+    if (qIMG){       
+        //format: iext isize idata
+        char ext[EXTENSION_SIZE + 1];
+        char isize[TOPIC_SIZE + 1];
+        long picsize;
 
-    strcpy(response, "QUR OK\n");
-    transferBytes = strlen(response);
+        // Read iext
+        puts("reading ext");
+        bytesReaded = readFromTCP(client, ext, EXTENSION_SIZE + 1);
+        if(bytesReaded !=  (EXTENSION_SIZE + 1) || ext[bytesReaded - 1]!= ' '){
+            replyToTCP("QUR NOK\n", client);
+            return;
+        }
+        ext[bytesReaded-1] = '\0';        
+        puts("reading iSize");
+        // Read isize
+        bytesReaded = readFromTCP(client, isize, -1);
+        if(bytesReaded > (TOPIC_SIZE + 1) || isize[bytesReaded - 1]!= ' '){
+            replyToTCP("QUR NOK\n", client);
+            return;
+        }
+        isize[bytesReaded - 1] = '\0';
+        puts("checking iSize");
+        if ((picsize = toPositiveNum(isize)) == -1 || picsize > MAX_FILE_SIZE) {
+            replyToTCP("QUR NOK\n", client);
+            return;
+        }        
+        
+        // Reset data
+        // memset(data, 0, BUFFER_SIZE);
+        // Create question image name = dir/name.ext    
+        puts("reading picdata");
+        sprintf(questionName, "%s/%s-%s.%s", dirName, question, id, ext);
+        if (receiveAndWriteFile(questionName, client, data, picsize) != 0){
+            error("Error writing file to disk");
+        }
+    } else {
+        puts("no pic");
+        bytesReaded = readFromTCP(client, data, 1);
+        if (data[0] != '\n'){
+            replyToTCP("QUR NOK\n", client);
+            return;
+        }
+    }
+
+    // Answer client OK
+    replyToTCP("QUR OK\n", client);
 }
 
 /*Submits answer to a certain question*/
@@ -797,115 +932,58 @@ void answerSubmitCommand(char *id, char *response) {
 }
 
 // ######## END OF TCP COMMANDS ###########
+// TODO: remove "response" arg, unused
+void handleTCPCommand(int client, char *readBuffer){
+    //   if (!strcmp(readBuffer, "GQU")) {
+    //      questionGetCommand(readBuffer, client);
+    //   }
+    /*   else*/ if (!strcmp(readBuffer, "QUS")) {
+         questionSubmitCommand(readBuffer, client);
+      }
+    //   else if (!strcmp(readBuffer, "ANS")) {
+    //      registerCommand(arg, response);
+    //   }
+      else{
+          replyToTCP("ERR\n", client);
+      }
+}
 
 
-void handleCommand(char *request, char **response)
-{
-    char code[4];
+
+void handleUDPCommand(char *request, char *response) {
     char *arg;
-    int i;
 
-    /*Gets message code*/
-    for (i = 0; i < 3; i++) {
-        code[i] = request[i];
+    if (deleteNewLine(request)) {
+        strcpy(response, "ERR\n");
+        return;
     }
-    code[i] = '\0';
-
+    
+    /* Gets command name */
+    arg = getNextArg(request, ' ', -1);
+    
     /* Checks for command type */
-    if (!strcmp(code, "REG"))
-    {
-        if (deleteNewLine(request)) {
-            strcpy(*response, "ERR\n");
-            return;
-        }
-        /* Gets command name */
-        arg = getNextArg(request, ' ', -1);
-
-        registerCommand(arg, *response);
-    } else if (!strcmp(code, "LTP"))
-    {
-        if (deleteNewLine(request)) {
-            strcpy(*response, "ERR\n");
-            return;
-        }
-        /* Gets command name */
-        arg = getNextArg(request, ' ', -1);
-
-        topicListCommand(*response);
+    /* <udp> */
+    if (!strcmp(request, "REG")) {
+        registerCommand(arg, response);
+    } else if (!strcmp(request, "LTP")) {
+        topicListCommand(response);
     }
-    else if (!strcmp(code, "PTP"))
-    {
-        if (deleteNewLine(request)) {
-            strcpy(*response, "ERR\n");
-            return;
-        }
-        /* Gets command name */
-        arg = getNextArg(request, ' ', -1);
-
-        topicProposeCommand(arg, *response);
+    else if (!strcmp(request, "PTP")) {
+        topicProposeCommand(arg, response);
     }
-    else if (!strcmp(code, "LQU"))
-    {
-        if (deleteNewLine(request)) {
-            strcpy(*response, "ERR\n");
-            return;
-        }
-        /* Gets command name */
-        arg = getNextArg(request, ' ', -1);
-
-        questionListCommand(arg, *response);
+    else if (!strcmp(request, "LQU")) {
+        questionListCommand(arg, response);
     }
-    else if (!strcmp(code, "GQU"))
-    {
-        if (deleteNewLine(request)) {
-            strcpy(*response, "ERR\n");
-            transferBytes = strlen(*response);
-            return;
-        }
-        /* Gets command name */
-        arg = getNextArg(request, ' ', -1);
-
-        questionGetCommand(arg, response);
-    }
-    /*Messages that include files must be checked more carefully*/
-    else if (!strcmp(code, "QUS"))
-    {
-        if (request[transferBytes - 1] != '\n') {
-            strcpy(*response, "ERR\n");
-            transferBytes = strlen(*response);
-            return;
-        }
-        sprintf(request + transferBytes - 1, " ");
-        /* Gets command name */
-        arg = getNextArg(request, ' ', -1);
-
-        questionSubmitCommand(arg, *response);
-    }
-    else if (!strcmp(code, "ANS"))
-    {
-        if (request[transferBytes - 1] != '\n') {
-            strcpy(*response, "ERR\n");
-            transferBytes = strlen(*response);
-            return;
-        }
-        sprintf(request + transferBytes - 1, " ");
-        /* Gets command name */
-        arg = getNextArg(request, ' ', -1);
-
-        answerSubmitCommand(arg, *response);
-    }
-    else
-    {
-        strcpy(*response, "ERR\n");
+    else {
+        strcpy(response, "ERR\n");
     }
 }
 
-int main()
-{
+int main() {
     struct sigaction pipe, intr, child;
-    char *udpResponse;
-    char *udpBuffer;
-    char *tcpBuffer, *tcpResponse;
+    char udpResponse[BUFFER_SIZE];
+    char udpBuffer[BUFFER_SIZE];
+    char tcpBuffer[BUFFER_SIZE]; 
     int n, client;
     pid_t pid;
 
@@ -949,17 +1027,9 @@ int main()
         else if (FD_ISSET(udp, &rfds))
         {
             //Got message from udp server
-            udpBuffer = (char *) malloc(BUFFER_SIZE);
-            if (udpBuffer == NULL)
-                error("Error on malloc");
-
-            udpResponse = (char *) malloc(BUFFER_SIZE);
-            if (udpResponse == NULL)
-                error("Error on malloc");
-
             memset(udpBuffer, 0, BUFFER_SIZE);
             addrlen = sizeof(addr);
-            transferBytes = recvfrom(udp, udpBuffer, 128, 0, (struct sockaddr *)&addr, &addrlen);
+            transferBytes = recvfrom(udp, udpBuffer, BUFFER_SIZE, 0, (struct sockaddr *)&addr, &addrlen);
             if (transferBytes == -1)
                 error("Error receiving from udp socket");
 
@@ -970,12 +1040,10 @@ int main()
             write(1, udpBuffer, transferBytes);
 
             *(udpBuffer + transferBytes) = '\0';
-            handleCommand(udpBuffer, &udpResponse);
+            handleUDPCommand(udpBuffer, udpResponse);
             transferBytes = sendto(client, udpResponse, strlen(udpResponse), 0, (struct sockaddr *)&addr, addrlen);
             if (transferBytes == -1)
                 error("Error writing to udp socket");
-            free(udpBuffer);
-            free(udpResponse);
         }
 
         else if (FD_ISSET(tcp, &rfds))
@@ -992,24 +1060,14 @@ int main()
             else if (pid == 0) {
                 close(tcp);
 
-                tcpBuffer = (char *) malloc(BUFFER_SIZE);
-                if (tcpBuffer == NULL)
-                    error("Error on malloc");
-
-                tcpResponse = (char *) malloc(BUFFER_SIZE);
-                if (tcpResponse == NULL)
-                    error("Error on malloc");
-
-                transferBytes = readFromTCP(client, &tcpBuffer);
                 write(1, "tcp received: ", 14);
-                write(1, tcpBuffer, transferBytes);
-                handleCommand(tcpBuffer, &tcpResponse);
-                printf("%s\n", tcpResponse);
-                replyToTCP(tcpResponse, client);
+
+                if((transferBytes = readFromTCP(client, tcpBuffer, -1)) != 4)
+                    error("Couldn\'t read initial 3 bytes");
+                tcpBuffer[3] = '\0';
+                handleTCPCommand(client, tcpBuffer);                
                 close(client);
                 freeaddrinfo(res);
-                free(tcpBuffer);
-                free(tcpResponse);
                 exit(EXIT_SUCCESS);
             }
 
