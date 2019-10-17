@@ -366,6 +366,12 @@ int handleFile(int fd, char *fn) {
 
 }
 
+/*
+fd - client's fd
+fn - question name
+IMG - img flag
+in - image name
+*/
 int sendDataBlock(int fd, char *fn, int IMG, char *in) {
 
     char *iExt, buffer[BUFFER_SIZE];
