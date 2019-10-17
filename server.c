@@ -337,6 +337,7 @@ void findTopic(char *topic, char *dirName) {
             name = strtok(aux, "-");
             if (!strcmp(topic, name)) {
                 strcpy(dirName, entry->d_name);
+                printf(":%s: find topic\n", entry->d_name);
                 closedir(dir);
                 return;
             }
@@ -450,7 +451,7 @@ void topicProposeCommand(char *id, char *response) {
 void questionListCommand(char *topic, char *response) {
     DIR *dir;
     struct dirent *entry;
-    char topicDir[TOPIC_LEN];
+    char topicDir[TOPIC_LEN + 1];
     char dirName[TOPIC_LEN + 8];
     char questions[99 * (QUESTION_LEN + 1)];
     char *fp;
@@ -474,6 +475,7 @@ void questionListCommand(char *topic, char *response) {
     sprintf(dirName, "topics/%s", topicDir);
 
     /*Opens directory*/
+
     if (!(dir = opendir(dirName)))
         error("Error opening directory");
 
@@ -670,8 +672,8 @@ void questionSubmitCommand(char *id, char *response) {
     char *topic, *question, *data;
     char *ret;
     char dirName[TOPIC_LEN + 8];
-    char questionName[TOPIC_LEN + 9 + TOPIC_LEN + 4];
-    char testTopic[TOPIC_LEN];
+    char questionName[TOPIC_LEN + 9 + TOPIC_LEN + 5];
+    char testTopic[TOPIC_LEN + 1];
     int nQuestions;
 
     /*Get arguments*/
