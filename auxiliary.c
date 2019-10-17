@@ -252,18 +252,18 @@ void freeList(char **l, long size) {
 
 }
 
-char* parseDataBlock(char *content, long cSize, char *fn) {
+int parseDataBlock(int fd, char *fn) {
 
     char *arg, *nextArg, fileName[TOPIC_SIZE + QUESTION_SIZE + 6];
     int IMG;
 
     /* Handles "fSize fData" */
     sprintf(fileName, "%s.txt", fn);
-    if ((arg = handleFile(content, cSize, fileName)) == NULL) {
-        return NULL;
+    if (handleFile(fd, fileName)) {
+        return 1;
     }
 
-    /* Checks if there is an image */
+    /* Checks if there is an image 
     if ((nextArg = getNextArg(arg, ' ', 1)) == NULL) {
         return NULL;
     } 
@@ -271,30 +271,32 @@ char* parseDataBlock(char *content, long cSize, char *fn) {
         return NULL;
     }
 
-    /* Checks if IMG is a binary flag */
+     Checks if IMG is a binary flag 
     if (IMG < 0 || IMG > 1) {
         return NULL;
     }
     arg = nextArg;
 
-    /* There is an image */
+     There is an image 
     if (IMG) {
 
-        /* Handles "iExt iSize iData" */
+         Handles "iExt iSize iData" 
         if ((nextArg = handleImage(arg, cSize - (nextArg - content), fn)) == NULL) {
             return NULL;
         }
     }
         
-    return nextArg;
+    return nextArg;*/
+
+    return 0;
 
 }
 
-char* handleImage(char *content, int cSize, char *fn) {
+char* handleImage(int fd, char *fn) {
 
     char *nextArg, imageName[strlen(fn) + EXTENSION_SIZE + 2];
 
-    /* Gets image extension */
+    /* Gets image extension 
     if ((nextArg = getNextArg(content, ' ', EXTENSION_SIZE)) == NULL) {
         return NULL;
     }
@@ -303,31 +305,33 @@ char* handleImage(char *content, int cSize, char *fn) {
     }
     sprintf(imageName, "%s.%s", fn, content);
 
-    /* Handles "size data" */
+     Handles "size data" 
     if ((nextArg = handleFile(nextArg, cSize - (nextArg - content), imageName)) == NULL) {
         return NULL;
     }
 
-    return nextArg;
+    return nextArg;*/
+    return 0;
 
 }
 
-char* handleFile(char *content, int cSize, char *fn) {
+int handleFile(int fd, char *fn) {
 
-    char *nextArg;
+    char *nextArg, buffer[BUFFER_SIZE + 1], sizeSring[MAX_FILE_SIZE_LENGTH + 2];
+    int read = 0, written = 0, blocks, rest;
     long size;
 
     /* Gets size of data */
-    if ((nextArg = getNextArg(content, ' ', -1)) == NULL) {
-        return NULL;
-    }
-    if ((size = toPositiveNum(content)) == -1 || size > MAX_FILE_SIZE) {
-        return NULL;
-    }
-
-    /* Checks if size isnt greater than space left on the buffer */
-    if (nextArg + size > content + cSize - 1) {
-        return NULL;
+    do {
+        if (readBytes(fd, buffer, 2) == 0) {
+            return 1;
+        }
+        sizeSring[read] = buffer[0];
+        read++;
+    } while (buffer[0] != ' ' && read < MAX_FILE_SIZE + 1);
+    sizeSring[read - 1] = '\0';
+    if ((size = toPositiveNum(sizeSring)) == -1 || size > MAX_FILE_SIZE) {
+        return 1;
     }
 
     /* Stores data in file */
@@ -336,10 +340,24 @@ char* handleFile(char *content, int cSize, char *fn) {
         perror("ERROR: fopen\n");
         exit(EXIT_FAILURE);
     }
-    fwrite(nextArg, sizeof(char), size, f);
+
+    /* Determines how many blocks we need */
+    blocks = size / BUFFER_SIZE;
+    for (; blocks > 0; blocks--) {
+        read = readBytes(fd, buffer, BUFFER_SIZE + 1);
+        if (read == 0 || read < BUFFER_SIZE) {
+            return 1;
+        }
+        fwrite(buffer, sizeof(char), BUFFER_SIZE, f);
+    }
+
+    /* Stores the rest of the data */
+    rest = size % BUFFER_SIZE;
+    read = readBytes(fd, buffer, rest + 1);
+    fwrite(buffer, sizeof(char), rest, f);
     fclose(f);
 
-    return nextArg + size + 1;
+    return 0;
 
 }
 
@@ -471,5 +489,53 @@ char* readFromFile(char *fn, long *size) {
     fclose(f);
 
     return data;
+
+}
+
+void writeBytes(int fd, char *bytes, long size) {
+
+    long written = 0, n;
+
+    printf("Sending %ld bytes and content: \"", size);
+    fflush(stdout);
+    write(1, bytes, size);
+    printf("\"\n");
+    fflush(stdout);
+
+    /* Sends bytes */
+    while (written < size) {
+        n = write(fd, bytes + written, size - written);
+        if (n == -1) {
+            perror("ERROR: writing bytes\n");
+            exit(EXIT_FAILURE);
+        }
+        written += n;
+    }
+
+}
+
+int readBytes(int fd, char *buffer, long size) {
+
+    long n, left = size;
+
+    while ((n = read(fd, buffer + size - left, left - 1)) > 0) {
+        left -=n;
+    }
+    if (n == -1) {
+        perror("ERROR: reading bytes\n");
+        exit(EXIT_FAILURE);
+    }
+
+    /* Null terminates buffer */
+    *(buffer + size - left) = '\0';
+
+    printf("Read %ld bytes and content: \"", size - left);
+    fflush(stdout);
+    write(1, buffer, size - left);
+    printf("\"\n");
+    fflush(stdout);
+
+
+    return size - left;
 
 }
