@@ -201,6 +201,10 @@ int countQuestions(char *dirName) {
     return count;
 }
 
+/* 
+args: 'question' format question-id
+returns: number
+*/
 int countAnswers(char *dirName, char *question) {
     DIR *dir;
     struct dirent *entry;
@@ -866,69 +870,152 @@ void questionSubmitCommand(char *buffer, int client) {
 }
 
 /*Submits answer to a certain question*/
-void answerSubmitCommand(char *id, char *response) {
-    char *topic, *question, *data;
-    char *ret;
+/*ANS aUserID topic  question  asize  adata  aIMG  [iext isize idata]*/
+void answerSubmitCommand(char *buffer, int client) {
+    char id[ID_SIZE + 1];
+    char topic[TOPIC_SIZE + 1];
+    char question[TOPIC_SIZE + 1];
+    char asize[TOPIC_SIZE + 1];
+    long filesize;
+    char data[BUFFER_SIZE];
     char dirName[TOPIC_LEN + 8];
-    char answerName[TOPIC_LEN + 9 + TOPIC_LEN + 4 + 3];
-    char questionName[TOPIC_LEN + 9 + TOPIC_LEN + 4];
-    char testTopic[TOPIC_LEN];
-    char testQuestion[TOPIC_LEN + 4];
-    int nAnswers;
+    char answerName[TOPIC_LEN + 9 + TOPIC_LEN + 5 + 3];
+    char testTopic[TOPIC_LEN + 1];    
+    char testQuestion[TOPIC_LEN + 1];
+    int nAnswers, bytesReaded, aIMG;
 
     /*Get arguments*/
-    topic = getNextArg(id, ' ', -1);
-    if (topic == NULL) {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+    bytesReaded = readFromTCP(client, id, -1);
+    if (bytesReaded > ID_SIZE + 1 || id[bytesReaded - 1] != ' ') {
+        replyToTCP("QUR NOK\n", client);
         return;
     }
+    id[bytesReaded - 1] = '\0';
 
-    question = getNextArg(topic, ' ', -1);
-    if (question == NULL) {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+    // Reading topic
+    bytesReaded = readFromTCP(client, topic, -1);
+    if (bytesReaded > TOPIC_SIZE + 1 || topic[bytesReaded - 1] != ' ') {
+        replyToTCP("QUR NOK\n", client);
         return;
     }
+    topic[bytesReaded - 1] = '\0';
 
-    data = getNextArg(question, ' ', -1);
-    if (data == NULL) {
-        strcpy(response, "ERR\n");
-        transferBytes = strlen(response);
+    //Reading question
+    bytesReaded = readFromTCP(client, question, -1);
+    if (bytesReaded > TOPIC_SIZE + 1 || question[bytesReaded - 1] != ' ') {
+        replyToTCP("QUR NOK\n", client);
         return;
     }
+    question[bytesReaded - 1] = '\0';
+    
+    // Reading asize
+    bytesReaded = readFromTCP(client, asize,-1);
+    if (bytesReaded > TOPIC_SIZE + 1 || asize[bytesReaded - 1] != ' ') {
+        replyToTCP("QUR NOK\n", client);
+        return;
+    }
+    asize[bytesReaded - 1] = '\0';    
+    if ((filesize = toPositiveNum(asize)) == -1 || filesize > MAX_FILE_SIZE) {
+        replyToTCP("QUR NOK\n", client);
+        return;
+    }
+    
+    // sets testTopic to 'topic'-id
     findTopic(topic, testTopic);
 
-    sprintf(dirName, "topics/%s", testTopic);
-    sprintf(questionName, "%s/%s-%s", dirName, question, id);
+    sprintf(dirName, "topics/%s", testTopic); 
+    // dirname = "./topics/$(topic)-id/"
 
-    /*Checks if id and topic are correct*/
+    // Checks if id and topic are correct
     if (!isValidID(id) || !isValidTopic(topic) || *testTopic == '\0' ||
             !isValidQuestion(question)) {
-        strcpy(response, "ANR NOK\n");
-        transferBytes = strlen(response);
+        replyToTCP("QUR NOK\n", client);
         return;
-    } else if (!findQuestion(dirName, question, testQuestion)) {
-        strcpy(response, "ANR NOK\n");
-        transferBytes = strlen(response);
+    }
+    // Checks if question $(question) exists
+     else if (findQuestion(dirName, question, testQuestion)) {
+        replyToTCP("QUR DUP\n", client);
         return;
+    // Checks if max number of questions has been reached
     } else if ((nAnswers = countAnswers(dirName, testQuestion)) == MAX_TOPICS) {
-        strcpy(response, "ANR FUL\n");
-        transferBytes = strlen(response);
+        replyToTCP("QUR FUL\n", client);
         return;
     }
+    
+    // Create question name = dir/name.txt
+    sprintf(answerName, "%s/%s_%02d-%s.txt", dirName, question, ++nAnswers, id);
+    
+    
+    /* Stores data in file */
+    // args: filename(char*), client(int), data (char[] buffer), filesize(long)
+    if (receiveAndWriteFile(answerName, client, data, filesize) != 0){
+        error("Error writing file to disk");    
+    }    
 
-    sprintf(answerName, "%s/%s_%02d-%s",dirName, question, ++nAnswers, id);
-
-    ret = parseDataBlock(data, transferBytes, answerName);
-    if (ret == NULL) {
-        strcpy(response, "ANR NOK\n");
-        transferBytes = strlen(response);
+    // Read aIMG flag
+    bytesReaded = readFromTCP(client, data, 3);
+    // Check if aIMG is surrounded by spaces
+    if (data[bytesReaded - 1] != ' ' || data[0] != ' ') {
+        replyToTCP("QUR NOK\n", client);
         return;
     }
+    // Check if aIMG is 0 or 1
+    data[0] = data[1];  // Shift...
+    data[1] = '\0'; //  ... chars to left
+    // Check if aIMG is 0 or 1
+    if (!((aIMG = (int) toPositiveNum(data)) == 0 || aIMG == 1)) {
+        replyToTCP("QUR NOK\n", client);
+        return;
+    }
+    
+    // If aIMG is 1
+    if (aIMG){       
+        //format: iext isize idata
+        char ext[EXTENSION_SIZE + 1];
+        char isize[TOPIC_SIZE + 1];
+        long picsize;
 
-    strcpy(response, "ANR OK\n");
-    transferBytes = strlen(response);
+        // Read iext
+        puts("reading ext");
+        bytesReaded = readFromTCP(client, ext, EXTENSION_SIZE + 1);
+        if(bytesReaded !=  (EXTENSION_SIZE + 1) || ext[bytesReaded - 1]!= ' '){
+            replyToTCP("QUR NOK\n", client);
+            return;
+        }
+        ext[bytesReaded-1] = '\0';        
+        puts("reading iSize");
+        // Read isize
+        bytesReaded = readFromTCP(client, isize, -1);
+        if(bytesReaded > (TOPIC_SIZE + 1) || isize[bytesReaded - 1]!= ' '){
+            replyToTCP("QUR NOK\n", client);
+            return;
+        }
+        isize[bytesReaded - 1] = '\0';
+        puts("checking iSize");
+        if ((picsize = toPositiveNum(isize)) == -1 || picsize > MAX_FILE_SIZE) {
+            replyToTCP("QUR NOK\n", client);
+            return;
+        }        
+        
+        // Reset data
+        // memset(data, 0, BUFFER_SIZE);
+        // Create question image name = dir/name.ext    
+        puts("reading picdata");
+        sprintf(answerName, "%s/%s_%02d-%s.%s", dirName, question, nAnswers, id, ext);
+        if (receiveAndWriteFile(answerName, client, data, picsize) != 0){
+            error("Error writing file to disk");
+        }
+    } else {
+        puts("no pic");
+        bytesReaded = readFromTCP(client, data, 1);
+        if (data[0] != '\n'){
+            replyToTCP("QUR NOK\n", client);
+            return;
+        }
+    }
+
+    // Answer client OK
+    replyToTCP("QUR OK\n", client);
 }
 
 // ######## END OF TCP COMMANDS ###########
@@ -940,9 +1027,9 @@ void handleTCPCommand(int client, char *readBuffer){
     /*   else*/ if (!strcmp(readBuffer, "QUS")) {
          questionSubmitCommand(readBuffer, client);
       }
-    //   else if (!strcmp(readBuffer, "ANS")) {
-    //      registerCommand(arg, response);
-    //   }
+       else if (!strcmp(readBuffer, "ANS")) {
+         answerSubmitCommand(readBuffer, client);
+      }
       else{
           replyToTCP("ERR\n", client);
       }
