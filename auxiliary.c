@@ -254,7 +254,7 @@ void freeList(char **l, long size) {
 
 int parseDataBlock(int fd, char *fn) {
 
-    char *arg, *nextArg, fileName[TOPIC_SIZE + QUESTION_SIZE + 6];
+    char fileName[TOPIC_SIZE + QUESTION_SIZE + 6], buffer[BUFFER_SIZE];
     int IMG;
 
     /* Handles "fSize fData" */
@@ -263,78 +263,80 @@ int parseDataBlock(int fd, char *fn) {
         return 1;
     }
 
-    /* Checks if there is an image 
-    if ((nextArg = getNextArg(arg, ' ', 1)) == NULL) {
-        return NULL;
-    } 
-    if ((IMG = (int) toPositiveNum(arg)) == -1) {
-        return NULL;
+    /* Gets " IMG" */
+    if (readBytes(fd, buffer, 3) == 0) {
+        return 1;
+    }
+    if (buffer[0] != ' ') {
+        return 1;
+    }
+    if ((IMG = (int) toPositiveNum(buffer + 1)) == -1) {
+        return 1;
     }
 
-     Checks if IMG is a binary flag 
+    /* Checks if IMG is a binary flag */
     if (IMG < 0 || IMG > 1) {
-        return NULL;
+        return 1;
     }
-    arg = nextArg;
 
-     There is an image 
+    /* There is an image */ 
     if (IMG) {
 
-         Handles "iExt iSize iData" 
-        if ((nextArg = handleImage(arg, cSize - (nextArg - content), fn)) == NULL) {
-            return NULL;
+        /* Gets a space */
+        if (readBytes(fd, buffer, 2) == 0 && buffer[0] != ' ') {
+            return 1;
+        }
+
+        /* Handles "iExt iSize iData" */
+        if (handleImage(fd, fn)) {
+            return 1;
         }
     }
-        
-    return nextArg;*/
 
     return 0;
 
 }
 
-char* handleImage(int fd, char *fn) {
+int handleImage(int fd, char *fn) {
 
-    char *nextArg, imageName[strlen(fn) + EXTENSION_SIZE + 2];
+    char buffer[BUFFER_SIZE + 1], imageName[strlen(fn) + EXTENSION_SIZE + 2];
 
-    /* Gets image extension 
-    if ((nextArg = getNextArg(content, ' ', EXTENSION_SIZE)) == NULL) {
-        return NULL;
+    /* Gets image extension by reading one byte at a time */
+    if (readUntillSpace(fd, buffer, EXTENSION_SIZE + 1)) {
+        return 1;
     }
-    if (!strcmp(content, "txt")) {
-        return NULL;
-    }
-    sprintf(imageName, "%s.%s", fn, content);
-
-     Handles "size data" 
-    if ((nextArg = handleFile(nextArg, cSize - (nextArg - content), imageName)) == NULL) {
-        return NULL;
+    
+    /* Checks if extension is valid */
+    if (!strcmp(buffer, "txt") || strlen(buffer) != EXTENSION_SIZE) {
+        return 1;
     }
 
-    return nextArg;*/
+    sprintf(imageName, "%s.%s", fn, buffer);
+
+    /* Handles "size data" */
+    if (handleFile(fd, imageName)) {
+        return 1;
+    }
+
     return 0;
 
 }
 
 int handleFile(int fd, char *fn) {
 
-    char *nextArg, buffer[BUFFER_SIZE + 1], sizeSring[MAX_FILE_SIZE_LENGTH + 2];
-    int read = 0, written = 0, blocks, rest;
+    char buffer[BUFFER_SIZE + 1];
+    int read = 0, blocks, rest;
     long size;
 
     /* Gets size of data */
-    do {
-        if (readBytes(fd, buffer, 2) == 0) {
-            return 1;
-        }
-        sizeSring[read] = buffer[0];
-        read++;
-    } while (buffer[0] != ' ' && read < MAX_FILE_SIZE + 1);
-    sizeSring[read - 1] = '\0';
-    if ((size = toPositiveNum(sizeSring)) == -1 || size > MAX_FILE_SIZE) {
+    if (readUntillSpace(fd, buffer, MAX_FILE_SIZE_LENGTH + 1)) {
+        return 1;
+    }
+    if ((size = toPositiveNum(buffer)) == -1 || size > MAX_FILE_SIZE) {
         return 1;
     }
 
-    /* Stores data in file */
+    /* Opens file */
     FILE *f = fopen(fn, "w");
     if (f == NULL) {
         perror("ERROR: fopen\n");
@@ -345,7 +347,7 @@ int handleFile(int fd, char *fn) {
     blocks = size / BUFFER_SIZE;
     for (; blocks > 0; blocks--) {
         read = readBytes(fd, buffer, BUFFER_SIZE + 1);
-        if (read == 0 || read < BUFFER_SIZE) {
+        if (read < BUFFER_SIZE) {
             return 1;
         }
         fwrite(buffer, sizeof(char), BUFFER_SIZE, f);
@@ -354,6 +356,9 @@ int handleFile(int fd, char *fn) {
     /* Stores the rest of the data */
     rest = size % BUFFER_SIZE;
     read = readBytes(fd, buffer, rest + 1);
+    if (read < rest) {
+        return 1;
+    }
     fwrite(buffer, sizeof(char), rest, f);
     fclose(f);
 
@@ -361,104 +366,76 @@ int handleFile(int fd, char *fn) {
 
 }
 
-char* createDataBlock(char *fn, int IMG, char *in, long *size) {
+int sendDataBlock(int fd, char *fn, int IMG, char *in) {
 
-    char *fData, *iData, *iExt, *dataBlock, *p;
-    long fSize, iSize;
-    int fsDigits, isDigits;
+    char *iExt, buffer[BUFFER_SIZE];
 
-    /* Reads from text file */
-    if ((fData = readFromFile(fn, &fSize)) == NULL) {
-        return NULL;
+    /* Sends size and data from file */
+    if (sendFile(fd, fn)) {
+        return 1;
     }
-    fsDigits = digits(fSize);
 
     if (IMG) {
 
         if (in == NULL) {
-            printf("CALL ERROR\n");
-            return NULL;
+            printf("ERROR: image name not defined\n");
+            return 1;
         }
+
+        /* Writes IMG */
+        sprintf(buffer, " %d ", IMG);
+        writeBytes(fd, buffer, strlen(buffer));
 
         /* Gets image ext */
         if ((iExt = strrchr(in, '.')) == NULL) {
             printf("Image name must contain extension\n");
-            return NULL;
+            return 1;
         }
         iExt++;
         if (!strcmp(iExt, "txt")) {
             printf("Image extension must be different from txt\n");
-            return NULL;
+            return 1;
         }
         if (strlen(iExt) != EXTENSION_SIZE) {
             printf("Extension must be %d bytes long\n", EXTENSION_SIZE);
-            return NULL;
+            return 1;
         }
 
-        /* Reads from image */
-        if ((iData = readFromFile(in, &iSize)) == NULL) {
-            return NULL;
-        }
+        /* Writes extension */
+        writeBytes(fd, iExt, strlen(iExt));
 
-        /* Allocates and builds Data Block */
-        isDigits = digits(iSize);
-        *size = fsDigits + fSize + 1 + EXTENSION_SIZE + isDigits + iSize + 5;
-        dataBlock = (char*) malloc(sizeof(char) * (*size));
-        if (dataBlock == NULL) {
-            perror("ERROR: malloc");
-            exit(EXIT_FAILURE);
-        }
-        sprintf(dataBlock, "%ld ", fSize);
-        p = strchr(dataBlock, ' ');
-        p++;
-        memcpy(p, fData, fSize);
-        p += fSize;
-        sprintf(p, " %d %s %ld ", IMG, iExt, iSize);
-        p = strrchr(p, ' ');
-        p++;
-        memcpy(p, iData, iSize);
+        /* Writes a space */
+        sprintf(buffer, " ");
+        writeBytes(fd, buffer, strlen(buffer));
 
-        free(iData);
+        /* Sends size and data from image */
+        if (sendFile(fd, in)) {
+            return 1;
+        }
 
     }
-    else {
+    else {     
 
-        if (in != NULL) {
-            printf("CALL ERROR\n");
-            return NULL;
-        }        
-
-        /* Allocates and builds Data Block */
-        *size = fsDigits + fSize + 1 + 2;
-        dataBlock = (char*) malloc(sizeof(char) * (*size));
-        if (dataBlock == NULL) {
-            perror("ERROR: malloc\n");
-            exit(EXIT_FAILURE);
-        }
-        sprintf(dataBlock, "%ld ", fSize);
-        p = strchr(dataBlock, ' ');
-        p++;
-        memcpy(p, fData, fSize);
-        p += fSize;
-        memcpy(p, " 0", 2);
+        /* Writes IMG */
+        sprintf(buffer, " %d", IMG);
+        writeBytes(fd, buffer, strlen(buffer));
 
     }
 
-    free(fData);
-
-    return dataBlock;
+    return 0;
 
 }
 
-char* readFromFile(char *fn, long *size) {
+int sendFile(int fd, char *fn) {
 
-    char *data;
+    char buffer[BUFFER_SIZE];
+    long size, read;
 
     /* Opens file */
     FILE *f = fopen(fn, "r");
     if (f == NULL) {
         printf("No such file\n");
-        return NULL;
+        return 1;
     }
 
     /* Gets size of file */
@@ -466,29 +443,31 @@ char* readFromFile(char *fn, long *size) {
         perror("ERROR: fseek\n");
         exit(EXIT_FAILURE);
     }
-    if ((*size = ftell(f)) == -1) {
+    if ((size = ftell(f)) == -1) {
         perror("ERROR: ftell\n");
         exit(EXIT_FAILURE);
     }
-    if (*size > MAX_FILE_SIZE) {
-        printf("File size is greater than %ld\n", MAX_FILE_SIZE);
-        return NULL;
+    if (size > MAX_FILE_SIZE) {
+        printf("File size is greater than max allowed size\n");
+        return 1;
     }
+
+    /* Sends file size trough socket */
+    sprintf(buffer, "%ld ", size);
+    writeBytes(fd, buffer, strlen(buffer));
+
     if (fseek(f, 0, SEEK_SET) == -1) {
         perror("ERROR: fseek\n");
         exit(EXIT_FAILURE);
     }
 
-    /* Allocs memory for file data and stores it */
-    data = (char*) malloc(*size * sizeof(char));
-    if (data == NULL) {
-        perror("ERROR: malloc\n");
-        exit(EXIT_FAILURE);
+    /* Sends data trough socket */
+    while ((read = fread(buffer, sizeof(char), BUFFER_SIZE, f)) > 0) {
+        writeBytes(fd, buffer, read);
     }
-    fread(data, sizeof(char), *size, f);
     fclose(f);
 
-    return data;
+    return 0;
 
 }
 
@@ -529,13 +508,38 @@ int readBytes(int fd, char *buffer, long size) {
     /* Null terminates buffer */
     *(buffer + size - left) = '\0';
 
+
     printf("Read %ld bytes and content: \"", size - left);
     fflush(stdout);
     write(1, buffer, size - left);
     printf("\"\n");
     fflush(stdout);
 
-
     return size - left;
+
+}
+
+int readUntillSpace(int fd, char *buffer, long size) {
+
+    char c[2];
+    long read = 0;
+
+    do {
+        if (read >= size) {
+            return 1;
+        }
+        if (readBytes(fd, c, 2) == 0) {
+            return 1;
+        }
+        buffer[read] = c[0];
+        read++;
+    } while (c[0] != ' ');
+
+    buffer[read - 1] = '\0';
+
+    printf("Read %ld bytes and content: \"%s\"\n", strlen(buffer), buffer);
+    fflush(stdout);
+
+    return 0;
 
 }

@@ -1,9 +1,8 @@
 /* 
     TODO:
-    1. CALCULATE SIZE NEEDED FOR RESPONSE AND FOR MESSAGE
     2. VERIFICAR SE QUANDO ACABEI DE DAR PARSE NOS ARGUMENTOS AINDA HA MAIS LIXO
-    3. FAZER UNS TESTES COM FICHEIROS VAZIOS
-    4. O SERVER DO STOR MORRE COM FICHEIROS VAZIOS ehehehehhe
+    3. TRATAR DO SIGPIPE
+    4. CLEANING UP IN CASE OF ERROR
 */
 
 #include "auxiliary.h"
@@ -278,7 +277,7 @@ int openTCP() {
 void registerCommand(char *command) {
 
     char message[BUFFER_SIZE], response[BUFFER_SIZE];
-    long id, responseSize;
+    long id, responseSize = 0;
 
     /* removes \n from end of string */
     if (deleteNewLine(command)) {
@@ -329,13 +328,13 @@ void registerCommand(char *command) {
 
 void topicListCommand() {
 
-    char message[BUFFER_SIZE], response[BUFFER_SIZE];
-    long responseSize;
+    char message[BUFFER_SIZE], response[BUFFER_SIZE_L];
+    long responseSize = 0;
 
     /* Builds message */
     strcpy(message, "LTP\n");
 
-    responseSize = sendMessageUDP(message, strlen(message), response, BUFFER_SIZE);
+    responseSize = sendMessageUDP(message, strlen(message), response, BUFFER_SIZE_L);
 
     /* Checks if response is valid */
     if (!isValidResponse(response, responseSize)) {
@@ -500,7 +499,7 @@ void topicSelectCommand(char *command, int flag) {
 void topicProposeCommand(char *command) {
 
     char message[BUFFER_SIZE], response[BUFFER_SIZE];
-    long responseSize;
+    long responseSize = 0;
 
     /* Deletes new line character */
     if (deleteNewLine(command)) {
@@ -553,13 +552,13 @@ void topicProposeCommand(char *command) {
 
 void questionListCommand() {
 
-    char message[BUFFER_SIZE], response[BUFFER_SIZE];
-    long responseSize;
+    char message[BUFFER_SIZE], response[BUFFER_SIZE_L];
+    long responseSize = 0;
 
     /* Builds message */
     sprintf(message, "LQU %s\n", selectedTopic);
 
-    responseSize = sendMessageUDP(message, strlen(message), response, BUFFER_SIZE);
+    responseSize = sendMessageUDP(message, strlen(message), response, BUFFER_SIZE_L);
 
     /* Checks if response is valid */
     if (!isValidResponse(response, responseSize)) {
@@ -681,8 +680,8 @@ void questionListCommand() {
 
 void questionGetCommand(char *command, int flag) {
     
-    char message[BUFFER_SIZE], *response, question[QUESTION_SIZE + 1];
-    long responseSize, number;
+    char message[BUFFER_SIZE], question[QUESTION_SIZE + 1];
+    long number;
 
     /* Deletes new line character */
     if (deleteNewLine(command)) {
@@ -727,33 +726,59 @@ void questionGetCommand(char *command, int flag) {
         sprintf(message, "GQU %s %s\n", selectedTopic, question);
     }
 
-    response = sendMessageTCP(message, strlen(message), &responseSize);
+    TCPfd = openTCP();
 
-    /* Checks if its a valid response */
-    if (!isValidResponse(response, responseSize)) {
-        free(response);
+    /* Sends message to server */
+    writeBytes(TCPfd, message, strlen(message));
+
+    /* Shows response to user */
+    char *arg, *nextArg, qFileName[QUESTION_SIZE + TOPIC_SIZE + 2], aFileName[QUESTION_SIZE + TOPIC_SIZE + 5],  buffer[BUFFER_SIZE + 1];
+    int N, AN;
+
+    /* Parses "QGR ID " */
+    if (readBytes(TCPfd, buffer, 6 + ID_SIZE) == 0) {
         printf("ERR\n");
+        close(TCPfd);
         return;
     }
 
     /* Checks for special responses */
-    if (!strcmp(response, "QGR EOF\n")) {
-        free(response);
+    if (!strcmp(buffer, "QGR EOF\n")) {
         printf("Request can not be answered\n");
+        close(TCPfd);
         return;
     }
-    if (!strcmp(response, "QGU ERR\n")) {
-        free(response);
-        printf("Somehow QGU request was not correctly formulated\n");
+    if (!strcmp(buffer, "QGR ERR\n")) {
+        printf("Somehow question_get request was not correctly formulated\n");
+        close(TCPfd);
         return;
     }
 
-    /* Replaces new line character with space (cant use replaceNewLine because files may contain '\0') */
-    response[responseSize - 2] = ' ';
+    /* Gets QGR */
+    if ((nextArg = getNextArg(buffer, ' ', -1)) == NULL) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
+    if (strcmp(buffer, "QGR")) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
+    arg = nextArg;
 
-    /* Shows response to user */
-    char *arg, *nextArg, qFileName[QUESTION_SIZE + TOPIC_SIZE + 2], aFileName[QUESTION_SIZE + TOPIC_SIZE + 5];
-    int N, AN;
+    /* Gets ID */
+    if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
+    if (getUserID(arg) == -1) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
+    arg = nextArg;
 
     /* Creates dir to store files in */
     if (mkdir(selectedTopic, 0777) == -1) {
@@ -763,116 +788,144 @@ void questionGetCommand(char *command, int flag) {
         }
     }
 
-    /* Gets QGR */
-    if ((nextArg = getNextArg(response, ' ', -1)) == NULL) {
-        free(response);
-        printf("ERR\n");
-        return;
-    }
-    if (strcmp(response, "QGR")) {
-        free(response);
-        printf("ERR\n");
-        return;
-    }
-    arg = nextArg;
-
-    /* Gets ID */
-    if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
-        free(response);
-        printf("ERR\n");
-        return;
-    }
-    if (getUserID(arg) == -1) {
-        free(response);
-        printf("ERR\n");
-        return;
-    }
-    arg = nextArg;
-
-    /* parses a Data Block */
+    /* Parses a Data Block */
     sprintf(qFileName, "%s/%s", selectedTopic, question);
-    if ((arg = parseDataBlock(arg, responseSize - (arg - response), qFileName)) == NULL) {
-        free(response);
+    if (parseDataBlock(TCPfd, qFileName)) {
         printf("ERR\n");
+        close(TCPfd);        
         return;
     }
 
-    /* Gets number of answers */
-    if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
-        free(response);
+    /* Parses Number of answers */
+    if (readBytes(TCPfd, buffer, 4) == 0) {
         printf("ERR\n");
+        close(TCPfd);
         return;
     }
-    if ((N = toPositiveNum(arg)) == - 1) {
-        free(response);
-        printf("ERR\n");
+    if (buffer[1] == '0') {
+        if (buffer[2] != '\n' && readBytes(TCPfd, buffer, 2) != 0) {
+            printf("ERR\n");
+            close(TCPfd);
+        }
         return;
+    }
+    else {
+        if (buffer[2] == ' ') {
+            buffer[2] = '\0';
+            if ((N = toPositiveNum(buffer + 1)) == - 1) {
+                close(TCPfd);
+                printf("ERR\n");
+                return;
+            }
+        }
+        else {
+            if ((N = toPositiveNum(buffer + 1)) == - 1) {
+                close(TCPfd);
+                printf("ERR\n");
+                return;
+            }
+
+            /* Gets the space */
+            if (readBytes(TCPfd, buffer, 2) == 0 || buffer[0] != ' ') {
+                close(TCPfd);
+                printf("ERR\n");
+                return;
+            }
+        }
     }
 
     /* Only a maximum of 10 answers can be sent */
     if (N > 10) {
-        free(response);
+        close(TCPfd);
         printf("ERR\n");
         return;
     }
-    arg = nextArg;
-    
-    /* Starts processing each answer */
+
+    /* Starts parsing answers */
+
     for (; N > 0; N--) {
 
-        /* Gets answer number */
-        if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
-            free(response);
+        /* Gets answer number and ID */
+        if (readBytes(TCPfd, buffer, 2 + 1 + ID_SIZE + 1 + 1) == 0) {
+            close(TCPfd);
             printf("ERR\n");
             return;
         }
-        if ((AN = toPositiveNum(arg)) == -1) {
-            free(response);
+
+        /* Reads answer number */
+        if ((nextArg = getNextArg(buffer, ' ', 2)) == NULL) {
+            close(TCPfd);
+            printf("ERR\n");
+            return;
+        }
+        if ((AN = toPositiveNum(buffer)) == -1) {
+            close(TCPfd);
             printf("ERR\n");
             return;
         }
         if (AN > 10) {
-            free(response);
+            close(TCPfd);
             printf("ERR\n");
             return;
         }
         arg = nextArg;
 
-        /* Gets ID */
+        /* Gets ID */ 
         if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
-            free(response);
+            close(TCPfd);
             printf("ERR\n");
             return;
         }
         if (getUserID(arg) == -1) {
-            free(response);
+            close(TCPfd);
             printf("ERR\n");
             return;
         }
-        arg = nextArg;
 
-        /* Processes Data Block */
-        sprintf(aFileName, "%s/%s_%d", selectedTopic, question, AN);
-        if ((arg = parseDataBlock(arg, responseSize - (arg - response), aFileName)) == NULL) {
-            free(response);
+        /* Processes Data Block */ 
+        sprintf(aFileName, "%s/%s_%s", selectedTopic, question, buffer);
+        if (parseDataBlock(TCPfd, aFileName)) {
+            close(TCPfd);
             printf("ERR\n");
             return;
+        }
+
+        /* Gets space or '\n' */
+        if (readBytes(TCPfd, buffer, 2) == 0) {
+            close(TCPfd);
+            printf("ERR\n");
+            return;
+        }
+        if (buffer[0] != ' ') {
+            if (buffer[0] == '\n' && N != 1) {
+                close(TCPfd);
+                printf("ERR\n");
+                return;
+            }
         }
 
     }
 
-    /* Selects question as localy active question */
+    /* Checks if there are more bytes in the socket */
+    if (read(TCPfd, buffer, BUFFER_SIZE) != 0) {
+        close(TCPfd);
+        printf("ERR\n");
+        return;
+    }
+
+    close(TCPfd);
+
+    /* Saves question as selected question */
     strcpy(selectedQuestion, question);
     qIsSet = 1;
 
-    free(response);
+    return;
 
 }
 
 void questionSubmitCommand(char *command) {
 
-    char *message, *response, *arg, *nextArg, *question, *fn, *in, *dataBlock;
-    long responseSize, messageSize, dbSize;
+    char *arg, *nextArg, *question, *fn, *in, buffer[BUFFER_SIZE + 1];
     int IMG;
 
     /* Replace new line character */
@@ -919,64 +972,53 @@ void questionSubmitCommand(char *command) {
         IMG = 1;
     }
 
-    /* Builds Data Block */
-    if ((dataBlock = createDataBlock(fn, IMG, in, &dbSize)) == NULL) {
+    /* Sends first bytes */
+    sprintf(buffer, "QUS %s %s %s ", userID, selectedTopic, question);
+    TCPfd = openTCP();
+    writeBytes(TCPfd, buffer, strlen(buffer));
+
+    /* Send Data Block */
+    if (sendDataBlock(TCPfd, fn, IMG, in)) {
+        close(TCPfd);
         return;
     }
     free(fn);
 
-    /* Allocates and builds message */
-    message = (char*) malloc(3 + ID_SIZE + TOPIC_SIZE + strlen(question) + dbSize + 5);
-    if (message == NULL) {
-        perror("ERROR: malloc\n");
-        exit(EXIT_FAILURE);
-    }
-    sprintf(message, "QUS %s %s %s ", userID, selectedTopic, question);
-    messageSize = strlen(message);
-    memcpy(message + messageSize, dataBlock, dbSize);
-    free(dataBlock);
-    messageSize += dbSize;
-    *(message + messageSize) = '\n';
+    /* Sends '\n' */
+    sprintf(buffer, "\n");
+    writeBytes(TCPfd, buffer, strlen(buffer));
 
-    response = sendMessageTCP(message, messageSize + 1, &responseSize);
-    free(message);
-
-    /* Checks if its a valid response */
-    if (!isValidResponse(response, responseSize)) {
-        free(response);
-        printf("ERR\n");
-        return;
-    }
+    /* Recieves response */
+    readBytes(TCPfd, buffer, BUFFER_SIZE + 1);
 
     /* Displays response */
-    if (!strcmp(response, "QUR OK\n")) {
+    if (!strcmp(buffer, "QUR OK\n")) {
 
         /* Saves question in case of success */
         strcpy(selectedQuestion, question);
         qIsSet = 1;
         printf("Question submited successfully\n");
     }
-    else if (!strcmp(response, "QUR DUP\n")) {
+    else if (!strcmp(buffer, "QUR DUP\n")) {
         printf("Question already exists\n");
     }
-    else if (!strcmp(response, "QUR FUL\n")) {
+    else if (!strcmp(buffer, "QUR FUL\n")) {
         printf("Question list is full\n");
     }
-    else if (!strcmp(response, "QUR NOK\n")) {
+    else if (!strcmp(buffer, "QUR NOK\n")) {
         printf("Something went wrong on server side\n");
     }
     else {
         printf("ERR\n");
     }
 
-    free(response);
+    close(TCPfd);
 
 }
 
 void answerSubmitCommand(char *command) {
 
-    char *message, *response, *arg, *nextArg, *fn, *in, *dataBlock;
-    long responseSize, messageSize, dbSize;
+    char *arg, *nextArg, *fn, *in, buffer[BUFFER_SIZE + 1];
     int IMG;
 
     /* Replace new line character */
@@ -1007,50 +1049,38 @@ void answerSubmitCommand(char *command) {
         IMG = 1;
     }
 
-    /* Builds Data Block */
-    if ((dataBlock = createDataBlock(fn, IMG, in, &dbSize)) == NULL) {
+    /* Sends first bytes */
+    sprintf(buffer, "ANS %s %s %s ", userID, selectedTopic, selectedQuestion);
+    TCPfd = openTCP();
+    writeBytes(TCPfd, buffer, strlen(buffer));
+
+    /* Sends Data Block */
+    if (sendDataBlock(TCPfd, fn, IMG, in)) {
+        close(TCPfd);
         return;
     }
     free(fn);
 
-    /* Allocates and builds message */
-    message = (char*) malloc(3 + ID_SIZE + TOPIC_SIZE + QUESTION_SIZE + dbSize + 5);
-    if (message == NULL) {
-        perror("ERROR: malloc\n");
-        exit(EXIT_FAILURE);
-    }
-    sprintf(message, "ANS %s %s %s ", userID, selectedTopic, selectedQuestion);
-    messageSize = strlen(message);
-    memcpy(message + messageSize, dataBlock, dbSize);
-    free(dataBlock);
-    messageSize += dbSize;
-    *(message + messageSize) = '\n';
+    /* Sends '\n' */
+    sprintf(buffer, "\n");
+    writeBytes(TCPfd, buffer, strlen(buffer));
 
-    response = sendMessageTCP(message, messageSize + 1, &responseSize);
-    free(message);
-
-    /* Checks if its a valid response */
-    if (!isValidResponse(response, responseSize)) {
-        free(response);
-        printf("ERR\n");
-        return;
-    }
+    /* Recieves response */
+    readBytes(TCPfd, buffer, BUFFER_SIZE + 1);
 
     /* Displays response */
-    if (!strcmp(response, "ANR OK\n")) {
+    if (!strcmp(buffer, "ANR OK\n")) {
         printf("Answer submited successfully\n");
     }
-    else if (!strcmp(response, "ANR FUL\n")) {
+    else if (!strcmp(buffer, "ANR FUL\n")) {
         printf("Answer list is full\n");
     }
-    else if (!strcmp(response, "ANR NOK\n")) {
+    else if (!strcmp(buffer, "ANR NOK\n")) {
         printf("Something went wrong on server side\n");
     }
     else {
         printf("ERR\n");
     }
-
-    free(response);
 
 }
 

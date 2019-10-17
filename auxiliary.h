@@ -103,7 +103,7 @@ void freeList(char **l, long size);
 
 /*  Parses a Data Block consisting of "fSize fData IMG [iExt iSize iData]"
     fn is the name of the file where data is going to be stored in
-    function handles extensions (file assumed to be .txt)
+    fn must not have extension
     returns a pointer to end of string or null in case of failure */
 int parseDataBlock(int fd, char *fn);
 
@@ -113,18 +113,16 @@ int handleFile(int fd, char *fn);
 
 /*  Handles the file portion of the Data Block "size data"
     returns a pointer to end of portion or null in case of failure */
-char* handleImage(int fd, char *fn);
+int handleImage(int fd, char *fn);
 
 /*  Composes a Data Block consisting of "fSize fData IMG [iExt iSize iData]"
     fn must be .txt and in must include extension
-    stores data block size in size
-    returns a pointer to null terminated Data Block or null in case of failure */
-char* createDataBlock(char *fn, int IMG, char *in, long *size);
+    returns 0 in case of success */
+int sendDataBlock(int fd, char *fn, int IMG, char *in);
 
-/*  Recieves a file and returns the data in it
-    size stores the size of data
-    returns NULL in case of failure */
-char* readFromFile(char *fn, long *size);
+/*  Sends data in file fn
+    returns 0 in case of success */
+int sendFile(int fd, char *fn);
 
 /* Writes size amount of bytes in file pointed by fd */
 void writeBytes(int fd, char *bytes, long size);
@@ -133,3 +131,8 @@ void writeBytes(int fd, char *bytes, long size);
     Null terminates buffer
     Returns number of bytes read */
 int readBytes(int fd, char *buffer, long size);
+
+/*  Reads untill a space or size bytes are read
+    replaces space with null terminator
+    returns 0 in case of success */ 
+int readUntillSpace(int fd, char *buffer, long size);
