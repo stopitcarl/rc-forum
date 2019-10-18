@@ -288,7 +288,7 @@ int parseDataBlock(int fd, char *fn) {
         return 1;
     }
 
-    /* There is an image */ 
+    /* There is an image */
     if (IMG) {
 
         /* Gets a space */
@@ -314,7 +314,7 @@ int handleImage(int fd, char *fn) {
     if (readUntillSpace(fd, buffer, EXTENSION_SIZE + 1)) {
         return 1;
     }
-    
+
     /* Checks if extension is valid */
     if (!strcmp(buffer, "txt") || strlen(buffer) != EXTENSION_SIZE) {
         return 1;
@@ -435,7 +435,7 @@ int sendDataBlock(int fd, char *fn, int IMG, char *in) {
         }
 
     }
-    else {     
+    else {
 
         /* Writes IMG */
         sprintf(buffer, " %d", IMG);
@@ -559,7 +559,7 @@ int readBytes(int fd, char *buffer, long size) {
         else {
             printf("Server took to long to response\n");
         }
-        
+
     } while (n > 0);
 
     /* Null terminates buffer */

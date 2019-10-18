@@ -93,9 +93,7 @@ int readFromTCP(int src, char *buffer, int nbytes)
             if (nread == -1)
                 error("Error reading from tcp socket");
         }
-    write(1, "Read: ", 6);
     write(1, buffer, nbytes);
-    write(1, "\n", 1);
 
     return nbytes;
 }
@@ -115,10 +113,6 @@ int replyToTCP(char *msg, int dst)
             error("Error writing to tcp socket");
         nwritten += n;
     }
-
-    write(1, "Sent: ", 6);
-    write(1, msg, nwritten);
-    write(1, "\n", 1);
 
     return nwritten;
 }
@@ -209,7 +203,7 @@ int countQuestions(char *dirName)
     return count;
 }
 
-/* 
+/*
 args: 'question' format question-id
 returns: number
 */
@@ -640,11 +634,11 @@ void questionGetCommand(int client)
     char questionFile[TOPIC_LEN + 9 + TOPIC_LEN + 4];
     char answer[TOPIC_LEN + 4];
     char answerID[ID_SIZE + 1];
-    char answerFile[TOPIC_LEN + 9 + TOPIC_LEN + 3 + 4];
+    char answerFile[BUFFER_SIZE];
     char imageName[TOPIC_LEN + 4];
     char imageFile[TOPIC_LEN + 9 + TOPIC_LEN + 4];
     char numOfAnswers[5];
-    char buffer[BUFFER_SIZE]; // TODO: we need 6 bytes, not a linus torvald's commit history worth of ram
+    char buffer[BUFFER_SIZE];
     char *id;
     char *AN;
     int IMG, nAnswers, N, bytesReaded;
@@ -754,11 +748,6 @@ void questionGetCommand(int client)
         sprintf(buffer, " %s %s ", AN, answerID);
         replyToTCP(buffer, client);
 
-        printf("filename:%s:\n", answerFile);
-        fflush(stdout);
-        printf("imagename:%s:\n", imageFile);
-        fflush(stdout);
-
         sendDataBlock(client, answerFile, IMG, imageFile);
     }
 
@@ -781,7 +770,7 @@ void questionSubmitCommand(int client)
     long filesize;
     char data[BUFFER_SIZE];
     char dirName[TOPIC_LEN + 8];
-    char questionName[TOPIC_LEN + 9 + QUESTION_SIZE + 5];
+    char questionName[TOPIC_LEN + 8 + TOPIC_LEN + 5];
     char testTopic[TOPIC_LEN + 1];
     int nQuestions, bytesReaded, qIMG;
 
@@ -953,7 +942,7 @@ void answerSubmitCommand(int client)
     long filesize;
     char data[BUFFER_SIZE];
     char dirName[TOPIC_LEN + 8];
-    char answerName[TOPIC_LEN + 9 + QUESTION_SIZE + 5 + 3];
+    char answerName[TOPIC_LEN + 8 + TOPIC_LEN + 5 + 3];
     char testTopic[TOPIC_LEN + 1];
     char testQuestion[TOPIC_LEN + 1];
     int nAnswers, bytesReaded, aIMG;
@@ -1084,10 +1073,8 @@ void answerSubmitCommand(int client)
             return;
         }
 
-        // Reset data
-        // memset(data, 0, BUFFER_SIZE);
-        // Create question image name = dir/name.ext
 
+        // Create question image name = dir/name.ext
         sprintf(answerName, "%s/%s_%02d-%s.%s", dirName, question, nAnswers, id, ext);
         if (receiveAndWriteFile(answerName, client, data, picsize) != 0)
         {
@@ -1231,12 +1218,13 @@ int main()
             // Update client
             client = udp;
 
-            write(1, "udp received: ", 14);
+            printf("UDP command from %s:%u\n", inet_ntoa(addr.sin_addr), addr.sin_port);
             write(1, udpBuffer, transferBytes);
 
             *(udpBuffer + transferBytes) = '\0';
             handleUDPCommand(udpBuffer, udpResponse);
             transferBytes = sendto(client, udpResponse, strlen(udpResponse), 0, (struct sockaddr *)&addr, addrlen);
+
             if (transferBytes == -1)
                 error("Error writing to udp socket");
         }
@@ -1256,7 +1244,7 @@ int main()
             {
                 close(tcp);
 
-                write(1, "tcp received: ", 14);
+                printf("TCP command from %s:%u\n", inet_ntoa(addr.sin_addr), addr.sin_port);
 
                 if ((transferBytes = readFromTCP(client, tcpBuffer, -1)) != 4)
                     error("Couldn\'t read initial 3 bytes");

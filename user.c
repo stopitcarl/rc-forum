@@ -1,10 +1,3 @@
-/* 
-    TODO:
-    2. VERIFICAR SE QUANDO ACABEI DE DAR PARSE NOS ARGUMENTOS AINDA HA MAIS LIXO
-    3. TRATAR DO SIGPIPE
-    4. CLEANING UP IN CASE OF ERROR
-*/
-
 #include "auxiliary.h"
 
 /*******************************************************************************
@@ -58,7 +51,7 @@ int main(int argc, char *argv[]) {
     struct sigaction pipe;
     char command[BUFFER_SIZE], *nextArg;
 
-    /* Handles SIGPIPE */ 
+    /* Handles SIGPIPE */
     memset(&pipe, 0, sizeof pipe);
     pipe.sa_handler = SIG_IGN;
     if (sigaction(SIGPIPE, &pipe, NULL) == -1) {
@@ -122,7 +115,7 @@ int main(int argc, char *argv[]) {
         }
         else if (!strcmp(command, "topic_propose") || !strcmp(command, "tp")) {
             if (uIsSet) {
-                topicProposeCommand(nextArg);   
+                topicProposeCommand(nextArg);
             }
             else {
                 printf("No user registered\n");
@@ -324,7 +317,7 @@ void registerCommand(char *command) {
     }
     else {
         printf("ERR\n");
-    }    
+    }
 
 }
 
@@ -417,7 +410,7 @@ void topicListCommand() {
 
             /* Gets userID */
             if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
-                freeList(topicList, tlSize); 
+                freeList(topicList, tlSize);
                 tlSize = 0;
                 printf("ERR\n");
                 return;
@@ -444,7 +437,7 @@ void topicListCommand() {
             tlSize = 0;
             printf("ERR\n");
             return;
-        } 
+        }
 
         /* Prints list of topics */
         printTopicList(topicList, tlSize);
@@ -452,14 +445,14 @@ void topicListCommand() {
     }
     else {
         printf("No topics available\n");
-        
+
         /* Checks if we parsed trough all arguments */
         if (nextArg != response + responseSize - 1) {
             freeList(topicList, tlSize);
             tlSize = 0;
             printf("ERR\n");
             return;
-        } 
+        }
     }
 
 }
@@ -683,7 +676,7 @@ void questionListCommand() {
             questionList[N - i] = (char*) malloc(sizeof(char) * (questionLength + IDLength + NALength + 3));
             sprintf(questionList[N - i], "%s %ld %ld", question, ID, NA);
             qlSize++;
-        
+
         }
 
         /* Checks if we parsed trough all arguments */
@@ -692,7 +685,7 @@ void questionListCommand() {
             tlSize = 0;
             printf("ERR\n");
             return;
-        } 
+        }
 
         /* Prints list of topics */
         printQuestionList(questionList, qlSize);
@@ -706,7 +699,7 @@ void questionListCommand() {
             tlSize = 0;
             printf("ERR\n");
             return;
-        } 
+        }
 
         printf("No questions available\n");
     }
@@ -714,7 +707,7 @@ void questionListCommand() {
 }
 
 void questionGetCommand(char *command, int flag) {
-    
+
     char message[BUFFER_SIZE], question[QUESTION_SIZE + 1];
     long number;
 
@@ -831,7 +824,7 @@ void questionGetCommand(char *command, int flag) {
     sprintf(qFileName, "%s/%s", selectedTopic, question);
     if (parseDataBlock(TCPfd, qFileName)) {
         printf("ERR\n");
-        close(TCPfd);        
+        close(TCPfd);
         return;
     }
 
@@ -913,7 +906,7 @@ void questionGetCommand(char *command, int flag) {
         }
         arg = nextArg;
 
-        /* Gets ID */ 
+        /* Gets ID */
         if ((nextArg = getNextArg(arg, ' ', -1)) == NULL) {
             close(TCPfd);
             printf("ERR\n");
@@ -925,7 +918,7 @@ void questionGetCommand(char *command, int flag) {
             return;
         }
 
-        /* Processes Data Block */ 
+        /* Processes Data Block */
         sprintf(aFileName, "%s/%s_%s", selectedTopic, question, buffer);
         if (parseDataBlock(TCPfd, aFileName)) {
             close(TCPfd);
@@ -992,7 +985,7 @@ void questionSubmitCommand(char *command) {
         printf("Invalid question\n");
         return;
     }
-    question = command;    
+    question = command;
     if (isInList(question, questionList, qlSize)) {
         printf("Question already exists\n");
         return;
@@ -1186,11 +1179,11 @@ void answerSubmitCommand(char *command) {
 /*  returns size of data read
     null terminates response */
 int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSize) {
-    
+
     int n;
     fd_set active_fd_set;
     struct timeval timeout;
-    
+
     /*
     printf("Sending %d bytes and message: \"", mBufferSize);
     fflush(stdout);
@@ -1202,7 +1195,7 @@ int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSi
     /* Sends message */
     if ((n =sendto(UDPfd, message, mBufferSize, 0, res->ai_addr, res->ai_addrlen)) == -1) {
         perror("ERROR: sendto\n");
-        exit(EXIT_FAILURE);    
+        exit(EXIT_FAILURE);
     }
 
     /* Initializes set of active fds */
