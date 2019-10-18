@@ -771,7 +771,7 @@ void questionGetCommand(char *command, int flag) {
     }
 
     /* Shows response to user */
-    char *arg, *nextArg, qFileName[QUESTION_SIZE + TOPIC_SIZE + 2], aFileName[QUESTION_SIZE + TOPIC_SIZE + 5],  buffer[BUFFER_SIZE + 1];
+    char *arg, *nextArg, qFileName[QUESTION_SIZE + TOPIC_SIZE + 2], aFileName[QUESTION_SIZE + TOPIC_SIZE + 5],  buffer[BUFFER_SIZE + 1], *c;
     int N, AN;
 
     /* Parses "QGR ID " */
@@ -834,6 +834,10 @@ void questionGetCommand(char *command, int flag) {
         close(TCPfd);        
         return;
     }
+
+    /* Prints confirmation */
+    c = strchr(qFileName, '/');
+    printf("Question %s download\n", c + 1);
 
     /* Parses Number of answers */
     if (readBytes(TCPfd, buffer, 4) == 0) {
@@ -929,6 +933,9 @@ void questionGetCommand(char *command, int flag) {
             return;
         }
 
+        /* Prints confirmation */
+        printf("Answer number %d download\n", AN);
+
         /* Gets space or '\n' */
         if (readBytes(TCPfd, buffer, 2) == 0) {
             close(TCPfd);
@@ -958,7 +965,7 @@ void questionGetCommand(char *command, int flag) {
     strcpy(selectedQuestion, question);
     qIsSet = 1;
 
-    printf("Recieved question and available answers successfully\n");
+    printf("Recieved question and all available answers successfully\n");
 
     return;
 
@@ -1029,6 +1036,7 @@ void questionSubmitCommand(char *command) {
         return;
     }
     free(fn);
+    printf("Question %s uploaded\n", question);
 
     /* Sends '\n' */
     sprintf(buffer, "\n");
@@ -1128,6 +1136,8 @@ void answerSubmitCommand(char *command) {
         return;
     }
     free(fn);
+
+    printf("Answer uploaded\n");
 
     /* Sends '\n' */
     sprintf(buffer, "\n");
