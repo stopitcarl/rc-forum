@@ -4,4 +4,6 @@ client
 server
 user
 *.o
-/*.txt
+test.txt
+big.txt
+MSGLOG.txt
