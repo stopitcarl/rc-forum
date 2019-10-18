@@ -906,11 +906,6 @@ void questionGetCommand(char *command, int flag) {
             printf("ERR\n");
             return;
         }
-        if (AN > 10) {
-            close(TCPfd);
-            printf("ERR\n");
-            return;
-        }
         arg = nextArg;
 
         /* Gets ID */ 
