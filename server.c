@@ -105,7 +105,7 @@ int readFromTCP(int src, char *buffer, int nbytes)
             }
     } else {
         // Timed out
-        return 0;
+        return nread;
     }
 
 
@@ -657,7 +657,7 @@ void questionGetCommand(int client)
     char buffer[BUFFER_SIZE];
     char *id;
     char *AN;
-    int IMG, nAnswers, N, bytesReaded;
+    int n, IMG, nAnswers, N, bytesReaded;
 
     // Gets arguments from message
 
@@ -980,7 +980,7 @@ void answerSubmitCommand(int client)
     char answerName[TOPIC_LEN + 8 + TOPIC_LEN + 5 + 3];
     char testTopic[TOPIC_LEN + 1];
     char testQuestion[TOPIC_LEN + 1];
-    int nAnswers, bytesReaded, aIMG;
+    int n, nAnswers, bytesReaded, aIMG;
 
     /*Get arguments*/
     bytesReaded = readFromTCP(client, id, -1);
