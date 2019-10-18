@@ -1,7 +1,7 @@
 SOURCES = server.c user.c auxiliary.c
 OBJS = $(SOURCES:%.c=%.o)
 CC = gcc
-CFLAGS = -Wall
+CFLAGS = -Wall -g
 LDFLAGS = -lm
 TARGETS = server user
 
