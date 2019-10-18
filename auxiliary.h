@@ -14,6 +14,7 @@
 #include <ctype.h>
 #include <sys/select.h>
 #include <sys/time.h>
+#include <signal.h>
 
 #define BUFFER_SIZE 1024
 #define BUFFER_SIZE_L 2048
@@ -125,7 +126,7 @@ int sendDataBlock(int fd, char *fn, int IMG, char *in);
 int sendFile(int fd, char *fn);
 
 /* Writes size amount of bytes in file pointed by fd */
-void writeBytes(int fd, char *bytes, long size);
+int writeBytes(int fd, char *bytes, long size);
 
 /*  Reads size - 1 amount of bytes from file pointed by fd
     Null terminates buffer

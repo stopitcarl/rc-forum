@@ -100,7 +100,13 @@ int replaceNewLine(char *s, char c) {
 
 int isValidResponse(char *s, long size) {
 
+    char *c;
+
     if (s == NULL || size == 1 || !endsWithNewLine(s, size)) {
+        return 0;
+    }
+    c = strchr(s, '\0');
+    if (c != s + size - 1) {
         return 0;
     }
     else {
@@ -208,9 +214,12 @@ int isInList(char *s, char **l, long size) {
         if ((c = strchr(l[i], ' ')) == NULL) {
             return 0;
         }
-        if (strncmp(s, l[i], c-l[i]) == 0) {
+        *c = '\0';
+        if (strcmp(s, l[i]) == 0) {
+            *c = ' ';
             return 1;
         }
+        *c = ' ';
     }
 
     return 0;
@@ -390,7 +399,9 @@ int sendDataBlock(int fd, char *fn, int IMG, char *in) {
 
         /* Writes IMG */
         sprintf(buffer, " %d ", IMG);
-        writeBytes(fd, buffer, strlen(buffer));
+        if (writeBytes(fd, buffer, strlen(buffer))) {
+            return 1;
+        }
 
         /* Gets image ext */
         if ((iExt = strrchr(in, '.')) == NULL) {
@@ -408,11 +419,15 @@ int sendDataBlock(int fd, char *fn, int IMG, char *in) {
         }
 
         /* Writes extension */
-        writeBytes(fd, iExt, strlen(iExt));
+        if (writeBytes(fd, iExt, strlen(iExt))) {
+            return 1;
+        }
 
         /* Writes a space */
         sprintf(buffer, " ");
-        writeBytes(fd, buffer, strlen(buffer));
+        if (writeBytes(fd, buffer, strlen(buffer))) {
+            return 1;
+        }
 
         /* Sends size and data from image */
         if (sendFile(fd, in)) {
@@ -424,7 +439,9 @@ int sendDataBlock(int fd, char *fn, int IMG, char *in) {
 
         /* Writes IMG */
         sprintf(buffer, " %d", IMG);
-        writeBytes(fd, buffer, strlen(buffer));
+        if (writeBytes(fd, buffer, strlen(buffer))){
+            return 1;
+        }
 
     }
 
@@ -460,7 +477,9 @@ int sendFile(int fd, char *fn) {
 
     /* Sends file size trough socket */
     sprintf(buffer, "%ld ", size);
-    writeBytes(fd, buffer, strlen(buffer));
+    if (writeBytes(fd, buffer, strlen(buffer))) {
+        return 1;
+    }
 
     if (fseek(f, 0, SEEK_SET) == -1) {
         perror("ERROR: fseek\n");
@@ -469,7 +488,9 @@ int sendFile(int fd, char *fn) {
 
     /* Sends data trough socket */
     while ((read = fread(buffer, sizeof(char), BUFFER_SIZE, f)) > 0) {
-        writeBytes(fd, buffer, read);
+        if (writeBytes(fd, buffer, read)) {
+            return 1;
+        }
     }
     fclose(f);
 
@@ -477,49 +498,80 @@ int sendFile(int fd, char *fn) {
 
 }
 
-void writeBytes(int fd, char *bytes, long size) {
+int writeBytes(int fd, char *bytes, long size) {
 
     long written = 0, n;
 
+    /*
     printf("Sending %ld bytes and content: \"", size);
     fflush(stdout);
     write(1, bytes, size);
     printf("\"\n");
     fflush(stdout);
+    */
 
     /* Sends bytes */
     while (written < size) {
         n = write(fd, bytes + written, size - written);
         if (n == -1) {
+            if (errno == EPIPE) {
+                printf("Socket closed while writing bytes\n");
+                return 1;
+            }
             perror("ERROR: writing bytes\n");
             exit(EXIT_FAILURE);
         }
         written += n;
     }
 
+    return 0;
+
 }
 
 int readBytes(int fd, char *buffer, long size) {
 
     long n, left = size;
+    fd_set active_fd_set;
+    struct timeval timeout;
 
-    while ((n = read(fd, buffer + size - left, left - 1)) > 0) {
-        left -=n;
-    }
-    if (n == -1) {
-        perror("ERROR: reading bytes\n");
-        exit(EXIT_FAILURE);
-    }
+    do
+    {
+
+        /* Initializes set of active fds */
+        FD_ZERO(&active_fd_set);
+        FD_SET(fd, &active_fd_set);
+
+        /* Sets timeout for server response */
+        timeout.tv_sec = TIMEOUT;
+        timeout.tv_usec = 0;
+
+        /* Waits TIMEOUT secs for requested data to be read */
+        if (select(FD_SETSIZE, &active_fd_set, NULL, NULL, &timeout) < 0) {
+            perror("ERROR: select\n");
+            exit(EXIT_FAILURE);
+        }
+
+        /* Reads data from fd */
+        if (FD_ISSET(fd, &active_fd_set)) {
+            n = read(fd, buffer + size - left, left - 1);
+            left -= n;
+        }
+        else {
+            printf("Server took to long to response\n");
+        }
+        
+    } while (n > 0);
 
     /* Null terminates buffer */
     *(buffer + size - left) = '\0';
 
-
+    /*
     printf("Read %ld bytes and content: \"", size - left);
     fflush(stdout);
     write(1, buffer, size - left);
     printf("\"\n");
     fflush(stdout);
+    */
 
     return size - left;
 
@@ -543,8 +595,9 @@ int readUntillSpace(int fd, char *buffer, long size) {
 
     buffer[read - 1] = '\0';
 
+    /*
     printf("Read %ld bytes and content: \"%s\"\n", strlen(buffer), buffer);
-    fflush(stdout);
+    */
 
     return 0;
 

@@ -48,7 +48,6 @@ void questionGetCommand(char *command, int flag);
 void questionSubmitCommand(char *command);
 void answerSubmitCommand(char *command);
 int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSize);
-char* sendMessageTCP(char *message, long mBufferSize, long *responseSize);
 
 /*******************************************************************************
  * CODE
@@ -56,7 +55,16 @@ char* sendMessageTCP(char *message, long mBufferSize, long *responseSize);
 
 int main(int argc, char *argv[]) {
 
+    struct sigaction pipe;
     char command[BUFFER_SIZE], *nextArg;
+
+    /* Handles SIGPIPE */ 
+    memset(&pipe, 0, sizeof pipe);
+    pipe.sa_handler = SIG_IGN;
+    if (sigaction(SIGPIPE, &pipe, NULL) == -1) {
+        perror("ERROR: sigaction\n");
+        exit(EXIT_FAILURE);
+    }
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;
@@ -303,26 +311,20 @@ void registerCommand(char *command) {
         return;
     }
 
-    /* Deletes new line character */
-    if (deleteNewLine(response)) {
-        printf("ERR\n");
-        return;
-    }
-
     /* Shows response to user */
-    if (!strcmp(response, "RGR OK")) {
+    if (!strcmp(response, "RGR OK\n")) {
 
         /* Saves user in case of acceptance */
         sprintf(userID, "%ld", id);
         uIsSet = 1;
         printf("User %s registered successfully\n", userID);
     }
-    else if (!strcmp(response, "RGR NOK")){
+    else if (!strcmp(response, "RGR NOK\n")){
         printf("Unable to register user %ld\n", id);
     }
     else {
         printf("ERR\n");
-    }
+    }    
 
 }
 
@@ -436,13 +438,29 @@ void topicListCommand() {
 
         }
 
+        /* Checks if we parsed trough all arguments */
+        if (nextArg != response + responseSize - 1) {
+            freeList(topicList, tlSize);
+            tlSize = 0;
+            printf("ERR\n");
+            return;
+        } 
+
         /* Prints list of topics */
         printTopicList(topicList, tlSize);
 
     }
     else {
         printf("No topics available\n");
-    } 
+        
+        /* Checks if we parsed trough all arguments */
+        if (nextArg != response + responseSize - 1) {
+            freeList(topicList, tlSize);
+            tlSize = 0;
+            printf("ERR\n");
+            return;
+        } 
+    }
 
 }
 
@@ -668,11 +686,28 @@ void questionListCommand() {
         
         }
 
+        /* Checks if we parsed trough all arguments */
+        if (nextArg != response + responseSize - 1) {
+            freeList(topicList, tlSize);
+            tlSize = 0;
+            printf("ERR\n");
+            return;
+        } 
+
         /* Prints list of topics */
         printQuestionList(questionList, qlSize);
 
     }
     else {
+
+        /* Checks if we parsed trough all arguments */
+        if (nextArg != response + responseSize - 1) {
+            freeList(topicList, tlSize);
+            tlSize = 0;
+            printf("ERR\n");
+            return;
+        } 
+
         printf("No questions available\n");
     }
 
@@ -729,7 +764,11 @@ void questionGetCommand(char *command, int flag) {
     TCPfd = openTCP();
 
     /* Sends message to server */
-    writeBytes(TCPfd, message, strlen(message));
+    if (writeBytes(TCPfd, message, strlen(message))) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
 
     /* Shows response to user */
     char *arg, *nextArg, qFileName[QUESTION_SIZE + TOPIC_SIZE + 2], aFileName[QUESTION_SIZE + TOPIC_SIZE + 5],  buffer[BUFFER_SIZE + 1];
@@ -807,6 +846,7 @@ void questionGetCommand(char *command, int flag) {
             printf("ERR\n");
             close(TCPfd);
         }
+        printf("Recieved question and available answers successfully\n");
         return;
     }
     else {
@@ -842,7 +882,6 @@ void questionGetCommand(char *command, int flag) {
     }
 
     /* Starts parsing answers */
-
     for (; N > 0; N--) {
 
         /* Gets answer number and ID */
@@ -919,6 +958,8 @@ void questionGetCommand(char *command, int flag) {
     strcpy(selectedQuestion, question);
     qIsSet = 1;
 
+    printf("Recieved question and available answers successfully\n");
+
     return;
 
 }
@@ -926,6 +967,7 @@ void questionGetCommand(char *command, int flag) {
 void questionSubmitCommand(char *command) {
 
     char *arg, *nextArg, *question, *fn, *in, buffer[BUFFER_SIZE + 1];
+    long n;
     int IMG;
 
     /* Replace new line character */
@@ -975,7 +1017,11 @@ void questionSubmitCommand(char *command) {
     /* Sends first bytes */
     sprintf(buffer, "QUS %s %s %s ", userID, selectedTopic, question);
     TCPfd = openTCP();
-    writeBytes(TCPfd, buffer, strlen(buffer));
+    if (writeBytes(TCPfd, buffer, strlen(buffer))) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
 
     /* Send Data Block */
     if (sendDataBlock(TCPfd, fn, IMG, in)) {
@@ -986,10 +1032,27 @@ void questionSubmitCommand(char *command) {
 
     /* Sends '\n' */
     sprintf(buffer, "\n");
-    writeBytes(TCPfd, buffer, strlen(buffer));
+    if (writeBytes(TCPfd, buffer, strlen(buffer))) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
 
     /* Recieves response */
-    readBytes(TCPfd, buffer, BUFFER_SIZE + 1);
+    if ((n = readBytes(TCPfd, buffer, BUFFER_SIZE + 1)) == 0) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
+
+    /* Checks if there are more bytes after '\0' */
+    char *c;
+    c = strchr(buffer, '\0');
+    if (c != buffer + n) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
 
     /* Displays response */
     if (!strcmp(buffer, "QUR OK\n")) {
@@ -1019,6 +1082,7 @@ void questionSubmitCommand(char *command) {
 void answerSubmitCommand(char *command) {
 
     char *arg, *nextArg, *fn, *in, buffer[BUFFER_SIZE + 1];
+    long n;
     int IMG;
 
     /* Replace new line character */
@@ -1052,7 +1116,11 @@ void answerSubmitCommand(char *command) {
     /* Sends first bytes */
     sprintf(buffer, "ANS %s %s %s ", userID, selectedTopic, selectedQuestion);
     TCPfd = openTCP();
-    writeBytes(TCPfd, buffer, strlen(buffer));
+    if (writeBytes(TCPfd, buffer, strlen(buffer))) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
 
     /* Sends Data Block */
     if (sendDataBlock(TCPfd, fn, IMG, in)) {
@@ -1063,10 +1131,27 @@ void answerSubmitCommand(char *command) {
 
     /* Sends '\n' */
     sprintf(buffer, "\n");
-    writeBytes(TCPfd, buffer, strlen(buffer));
+    if (writeBytes(TCPfd, buffer, strlen(buffer))) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
 
     /* Recieves response */
-    readBytes(TCPfd, buffer, BUFFER_SIZE + 1);
+    if ((n = readBytes(TCPfd, buffer, BUFFER_SIZE + 1)) == 0) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
+
+    /* Checks if there are more bytes after '\0' */
+    char *c;
+    c = strchr(buffer, '\0');
+    if (c != buffer + n) {
+        printf("ERR\n");
+        close(TCPfd);
+        return;
+    }
 
     /* Displays response */
     if (!strcmp(buffer, "ANR OK\n")) {
@@ -1096,11 +1181,13 @@ int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSi
     fd_set active_fd_set;
     struct timeval timeout;
     
+    /*
     printf("Sending %d bytes and message: \"", mBufferSize);
     fflush(stdout);
     write(1, message, mBufferSize);
     printf("\"\n");
     fflush(stdout);
+    */
 
     /* Sends message */
     if ((n =sendto(UDPfd, message, mBufferSize, 0, res->ai_addr, res->ai_addrlen)) == -1) {
@@ -1115,6 +1202,7 @@ int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSi
     /* Sets timeout for server response */
     timeout.tv_sec = TIMEOUT;
     timeout.tv_usec = 0;
+
     if (select(FD_SETSIZE, &active_fd_set, NULL, NULL, &timeout) < 0) {
         perror("ERROR: select\n");
         exit(EXIT_FAILURE);
@@ -1138,103 +1226,11 @@ int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSi
     else {
         response[n - 1] = '\0';
     }
+
+    /*
     printf("Recieved %d bytes and response: \"%s\"\n", n - 1, response);
+    */
 
     return n;
-
-}
-
-/*  returns null terminated response
-    stores amount of data read in responseSize */
-char* sendMessageTCP(char *message, long mBufferSize, long *responseSize) {
-
-    char *response;
-    long written = 0;
-    int n, left = BUFFER_SIZE;
-    fd_set active_fd_set;
-    struct timeval timeout;
-
-    *responseSize = 0;
-
-    TCPfd = openTCP();
-    printf("Sending %ld bytes and message: \"", mBufferSize);
-    fflush(stdout);
-    write(1, message, mBufferSize);
-    printf("\"\n");
-    fflush(stdout);
-    
-    /* Sends message */
-    while (written < mBufferSize) {
-        n = write(TCPfd, message + written, mBufferSize - written);
-        if (n == -1) {
-            perror("ERROR: write\n");
-            exit(EXIT_FAILURE);
-        }
-        written += n;
-    }
-    
-    /* Initializes set of active fds */
-    FD_ZERO(&active_fd_set);
-    FD_SET(TCPfd, &active_fd_set);
-
-    /* Sets timeout for server response */
-    timeout.tv_sec = TIMEOUT;
-    timeout.tv_usec = 0;
-    if (select(FD_SETSIZE, &active_fd_set, NULL, NULL, &timeout) < 0) {
-        perror("ERROR: select\n");
-        exit(EXIT_FAILURE);
-    }
-    if (FD_ISSET(TCPfd, &active_fd_set)) {
-        *responseSize = BUFFER_SIZE;
-        response = (char*) malloc(BUFFER_SIZE);
-        if (response == NULL) {
-            perror("ERROR: malloc\n");
-            exit(EXIT_FAILURE);
-        }
-        while ((n = read(TCPfd, response + *responseSize - left, left)) > 0) {
-            left -= n;
-
-            /* If no more space in buffer reallocates BUFFER_SIZE more bytes */
-            if (left == 0) {
-                left = BUFFER_SIZE;
-                *responseSize += BUFFER_SIZE;
-                if((response = (char *) realloc(response, *responseSize)) == NULL) {
-                    perror("ERROR: realloc\n");
-                    exit(EXIT_FAILURE);
-                }
-            }
-        }
-        if (n == -1) {
-            perror("ERROR: read\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-    else {
-        printf("Server took to long to respond\n");
-        return NULL;
-    }
-
-    /* Null terminates reponse */
-    if (left == 0) {
-        left = BUFFER_SIZE;
-        *responseSize += BUFFER_SIZE;
-        if((response = (char *) realloc(response, *responseSize)) == NULL) {
-            perror("ERROR: realloc\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-    *(response + *responseSize - left) = '\0';
-    left--;
-    *responseSize -= left;
-
-    close(TCPfd);
-
-    printf("Recieved %ld bytes and response: \"", *responseSize - 1);
-    fflush(stdout);
-    write(1, response, *responseSize - 1);
-    printf("\"\n");
-    fflush(stdout);
-
-    return response;
 
 }
