@@ -54,45 +54,61 @@ void waitChild()
 /*Reads from the tcp socket*/
 int readFromTCP(int src, char *buffer, int nbytes)
 {
-    int nread, nleft = nbytes;
+    fd_set fds;
+    struct timeval tv = {0, 10};
+    int n, nread, nleft = nbytes;
+
+    FD_ZERO(&fds);
+    FD_SET(src, &fds);
 
     if (nbytes > BUFFER_SIZE)
     {
         error("readFromTCP too big for buffer");
         return 0;
     }
+
+    // Uses select to implement timeout
+    do {
+        n = select(FD_SETSIZE, &fds, NULL, NULL, &tv);
+    } while (n == -1 && errno == EINTR);
+    if (n == -1)
+        error("Error on select");
+
     nread = 0;
-    if (nbytes < 0)
-    {
-        while (1)
-        {
-            nread += read(src, buffer + nread, 1);
 
-            if (nread == -1)
-                error("Error reading byte-by-byte from tcp socket");
-            else if (nread == BUFFER_SIZE)
-                return -1;
+    if (FD_ISSET(src, &fds)) {
+        if (nbytes < 0) {
+            while (1) {
+                nread += read(src, buffer + nread, 1);
 
-            if (buffer[nread - 1] == ' ' || buffer[nread - 1] == '\n')
-            {
-                nbytes = nread;
-                break;
+                if (nread == -1)
+                    error("Error reading byte-by-byte from tcp socket");
+                else if (nread == BUFFER_SIZE)
+                    return -1;
+
+                if (buffer[nread - 1] == ' ' || buffer[nread - 1] == '\n') {
+                    nbytes = nread;
+                    break;
+                }
             }
-        }
-    }
-    else
-        /* Makes sure the entire message is read */
-        while (nleft > 0)
-        {
-            // Read nleft bytes
-            nread = read(src, buffer + nbytes - nleft, nleft);
-            nleft -= nread;
-            if (nread == 0)
-                error("Coutinho was wrong"); // TODO: remove Coutinho warnings
+        } else
+            /* Makes sure the entire message is read */
+            while (nleft > 0) {
+                // Read nleft bytes
+                nread = read(src, buffer + nbytes - nleft, nleft);
+                nleft -= nread;
+                if (nread == 0)
+                    error("Broken pipe");
 
-            if (nread == -1)
-                error("Error reading from tcp socket");
-        }
+                if (nread == -1)
+                    error("Error reading from tcp socket");
+            }
+    } else {
+        // Timed out
+        return 0;
+    }
+
+
     write(1, buffer, nbytes);
 
     return nbytes;
@@ -649,6 +665,8 @@ void questionGetCommand(int client)
     bytesReaded = readFromTCP(client, topic, -1);
     if (bytesReaded > TOPIC_SIZE + 1 || topic[bytesReaded - 1] != ' ')
     {
+        // Reads rest of messgae before replying
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QGR ERR\n", client);
         return;
     }
@@ -658,6 +676,7 @@ void questionGetCommand(int client)
     bytesReaded = readFromTCP(client, question, -1);
     if (bytesReaded > QUESTION_SIZE + 1 || question[bytesReaded - 1] != '\n')
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QGR ERR\n", client);
         return;
     }
@@ -671,11 +690,13 @@ void questionGetCommand(int client)
     // Checks if question and topic are correct
     if (!isValidTopic(topic) || !isValidQuestion(question))
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QGR ERR\n", client);
         return;
     }
     else if (testTopic[0] == '\0' || !findQuestion(dirName, question, testQuestion))
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QGR EOF\n", client);
         return;
     }
@@ -689,6 +710,7 @@ void questionGetCommand(int client)
 
     if (*id == '\0')
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QGR EOF\n", client);
         return;
     }
@@ -737,6 +759,7 @@ void questionGetCommand(int client)
 
         if (*AN == '\0')
         {
+            do n = readFromTCP(client, question, -1); while (n != 0);
             replyToTCP("QGR EOF\n", client);
             return;
         }
@@ -772,12 +795,14 @@ void questionSubmitCommand(int client)
     char dirName[TOPIC_LEN + 8];
     char questionName[TOPIC_LEN + 8 + TOPIC_LEN + 5];
     char testTopic[TOPIC_LEN + 1];
-    int nQuestions, bytesReaded, qIMG;
+    int n, nQuestions, bytesReaded, qIMG;
 
     /*Get arguments*/
     bytesReaded = readFromTCP(client, id, -1);
     if (bytesReaded > ID_SIZE + 1 || id[bytesReaded - 1] != ' ')
     {
+        // Reads rest of message before replying
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QUR NOK\n", client);
         return;
     }
@@ -787,6 +812,7 @@ void questionSubmitCommand(int client)
     bytesReaded = readFromTCP(client, topic, -1);
     if (bytesReaded > TOPIC_SIZE + 1 || topic[bytesReaded - 1] != ' ')
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QUR NOK\n", client);
         return;
     }
@@ -796,6 +822,7 @@ void questionSubmitCommand(int client)
     bytesReaded = readFromTCP(client, question, -1);
     if (bytesReaded > TOPIC_SIZE + 1 || question[bytesReaded - 1] != ' ')
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QUR NOK\n", client);
         return;
     }
@@ -805,12 +832,14 @@ void questionSubmitCommand(int client)
     bytesReaded = readFromTCP(client, qsize, -1);
     if (bytesReaded > TOPIC_SIZE + 1 || qsize[bytesReaded - 1] != ' ')
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QUR NOK\n", client);
         return;
     }
     qsize[bytesReaded - 1] = '\0';
     if ((filesize = toPositiveNum(qsize)) == -1 || filesize > MAX_FILE_SIZE)
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QUR NOK\n", client);
         return;
     }
@@ -823,20 +852,23 @@ void questionSubmitCommand(int client)
 
     // Checks if id and topic are correct
     if (!isValidID(id) || !isValidTopic(topic) || *testTopic == '\0' ||
-        !isValidQuestion(question))
+            !isValidQuestion(question))
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QUR NOK\n", client);
         return;
     }
     // Checks if question $(question) exists
     else if (findQuestion(dirName, question, NULL))
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QUR DUP\n", client);
         return;
         // Checks if max number of questions has been reached
     }
     else if ((nQuestions = countQuestions(dirName)) == MAX_TOPICS)
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QUR FUL\n", client);
         return;
     }
@@ -870,6 +902,7 @@ void questionSubmitCommand(int client)
     // Check if qIMG is 0 or 1
     if (!((qIMG = (int)toPositiveNum(data)) == 0 || qIMG == 1))
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QUR NOK\n", client);
         return;
     }
@@ -887,6 +920,7 @@ void questionSubmitCommand(int client)
         bytesReaded = readFromTCP(client, ext, EXTENSION_SIZE + 1);
         if (bytesReaded != (EXTENSION_SIZE + 1) || ext[bytesReaded - 1] != ' ')
         {
+            do n = readFromTCP(client, question, -1); while (n != 0);
             replyToTCP("QUR NOK\n", client);
             return;
         }
@@ -896,6 +930,7 @@ void questionSubmitCommand(int client)
         bytesReaded = readFromTCP(client, isize, -1);
         if (bytesReaded > (TOPIC_SIZE + 1) || isize[bytesReaded - 1] != ' ')
         {
+            do n = readFromTCP(client, question, -1); while (n != 0);
             replyToTCP("QUR NOK\n", client);
             return;
         }
@@ -903,12 +938,11 @@ void questionSubmitCommand(int client)
 
         if ((picsize = toPositiveNum(isize)) == -1 || picsize > MAX_FILE_SIZE)
         {
+            do n = readFromTCP(client, question, -1); while (n != 0);
             replyToTCP("QUR NOK\n", client);
             return;
         }
 
-        // Reset data
-        // memset(data, 0, BUFFER_SIZE);
         // Create question image name = dir/name.ext
         sprintf(questionName, "%s/%s-%s.%s", dirName, question, id, ext);
         if (receiveAndWriteFile(questionName, client, data, picsize) != 0)
@@ -922,6 +956,7 @@ void questionSubmitCommand(int client)
         // bytesReaded = readFromTCP(client, data, 1);
         if (data[2] != '\n')
         {
+            do n = readFromTCP(client, question, -1); while (n != 0);
             replyToTCP("QUR NOK\n", client);
             return;
         }
@@ -951,6 +986,8 @@ void answerSubmitCommand(int client)
     bytesReaded = readFromTCP(client, id, -1);
     if (bytesReaded > ID_SIZE + 1 || id[bytesReaded - 1] != ' ')
     {
+        // Reads rest of message before replying
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("ANR NOK\n", client);
         return;
     }
@@ -960,6 +997,7 @@ void answerSubmitCommand(int client)
     bytesReaded = readFromTCP(client, topic, -1);
     if (bytesReaded > TOPIC_SIZE + 1 || topic[bytesReaded - 1] != ' ')
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("ANR NOK\n", client);
         return;
     }
@@ -969,6 +1007,7 @@ void answerSubmitCommand(int client)
     bytesReaded = readFromTCP(client, question, -1);
     if (bytesReaded > TOPIC_SIZE + 1 || question[bytesReaded - 1] != ' ')
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("ANR NOK\n", client);
         return;
     }
@@ -978,12 +1017,14 @@ void answerSubmitCommand(int client)
     bytesReaded = readFromTCP(client, asize, -1);
     if (bytesReaded > TOPIC_SIZE + 1 || asize[bytesReaded - 1] != ' ')
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("ANR NOK\n", client);
         return;
     }
     asize[bytesReaded - 1] = '\0';
     if ((filesize = toPositiveNum(asize)) == -1 || filesize > MAX_FILE_SIZE)
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("ANR NOK\n", client);
         return;
     }
@@ -1000,12 +1041,14 @@ void answerSubmitCommand(int client)
     if (!isValidID(id) || !isValidTopic(topic) || *testTopic == '\0' ||
         !isValidQuestion(question) || *testQuestion == '\0')
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("ANR NOK\n", client);
         return;
     }
     // Checks if max number of answers has been reached
     else if ((nAnswers = countAnswers(dirName, testQuestion)) == MAX_TOPICS)
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("ANR FUL\n", client);
         return;
     }
@@ -1028,7 +1071,7 @@ void answerSubmitCommand(int client)
             (data[bytesReaded - 1] == ' ' && !shouldNewLine) ||
             (data[bytesReaded - 1] == '\n' && shouldNewLine)))
     {
-
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("ANR NOK\n", client);
         return;
     }
@@ -1038,6 +1081,7 @@ void answerSubmitCommand(int client)
     // Check if aIMG is 0 or 1
     if (!((aIMG = (int)toPositiveNum(data)) == 0 || aIMG == 1))
     {
+        do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("ANR NOK\n", client);
         return;
     }
@@ -1054,6 +1098,7 @@ void answerSubmitCommand(int client)
         bytesReaded = readFromTCP(client, ext, EXTENSION_SIZE + 1);
         if (bytesReaded != (EXTENSION_SIZE + 1) || ext[bytesReaded - 1] != ' ')
         {
+            do n = readFromTCP(client, question, -1); while (n != 0);
             replyToTCP("ANR NOK\n", client);
             return;
         }
@@ -1063,12 +1108,14 @@ void answerSubmitCommand(int client)
         bytesReaded = readFromTCP(client, isize, -1);
         if (bytesReaded > (TOPIC_SIZE + 1) || isize[bytesReaded - 1] != ' ')
         {
+            do n = readFromTCP(client, question, -1); while (n != 0);
             replyToTCP("ANR NOK\n", client);
             return;
         }
         isize[bytesReaded - 1] = '\0';
         if ((picsize = toPositiveNum(isize)) == -1 || picsize > MAX_FILE_SIZE)
         {
+            do n = readFromTCP(client, question, -1); while (n != 0);
             replyToTCP("ANR NOK\n", client);
             return;
         }
@@ -1085,6 +1132,7 @@ void answerSubmitCommand(int client)
     {
         if (data[2] != '\n')
         {
+            do n = readFromTCP(client, question, -1); while (n != 0);
             replyToTCP("ANR NOK\n", client);
             return;
         }
