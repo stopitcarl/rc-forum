@@ -51,11 +51,11 @@ void waitChild()
         error("Error waiting for child");
 }
 
-/*Reads from the tcp socket*/
+/*Reads nbytes from tcp socket (src) */
 int readFromTCP(int src, char *buffer, int nbytes)
 {
     fd_set fds;
-    struct timeval tv = {0, 10};
+    struct timeval tv = {0, 100000};
     int n, nread, nleft = nbytes;
 
     FD_ZERO(&fds);
@@ -77,14 +77,17 @@ int readFromTCP(int src, char *buffer, int nbytes)
     nread = 0;
 
     if (FD_ISSET(src, &fds)) {
-        if (nbytes < 0) {
+        if (nbytes < 0) { // If nbytes = -1, read untill space or newline is found
             while (1) {
-                nread += read(src, buffer + nread, 1);
 
-                if (nread == -1)
+                n = read(src, buffer + nread, 1);
+
+                if (n == -1)
                     error("Error reading byte-by-byte from tcp socket");
-                else if (nread == BUFFER_SIZE)
+                else if (n == BUFFER_SIZE)
                     return -1;
+
+                nread += n;
 
                 if (buffer[nread - 1] == ' ' || buffer[nread - 1] == '\n') {
                     nbytes = nread;
@@ -98,7 +101,7 @@ int readFromTCP(int src, char *buffer, int nbytes)
                 nread = read(src, buffer + nbytes - nleft, nleft);
                 nleft -= nread;
                 if (nread == 0)
-                    error("Broken pipe");
+                    error("Broken socket");
 
                 if (nread == -1)
                     error("Error reading from tcp socket");
@@ -107,7 +110,6 @@ int readFromTCP(int src, char *buffer, int nbytes)
         // Timed out
         return nread;
     }
-
 
     write(1, buffer, nbytes);
 
@@ -157,7 +159,7 @@ int openTCP()
     if (n == -1)
         error("Error binding tcp socket");
 
-    //TODO change listen number
+    //TODO change active listens limit
     if (listen(fd, 5) == -1)
         error("Error on listen");
 
@@ -207,6 +209,7 @@ int countQuestions(char *dirName)
     /*Counts number questions in certain topic*/
     while ((entry = readdir(dir)) != NULL)
     {
+        // Question file cant have '_' and must end with .txt
         if (entry->d_type == DT_REG && strchr(entry->d_name, '_') == NULL &&
             strstr(entry->d_name, ".txt") != NULL)
         {
@@ -280,6 +283,7 @@ int countTopics()
     return count;
 }
 
+ /* Check if question has an attached image. */
 int findImage(char *dirName, char *question, char *imageName)
 {
     DIR *dir;
@@ -313,6 +317,7 @@ int findImage(char *dirName, char *question, char *imageName)
 }
 
 // args: filename(char*), client(int), data (char[] buffer), filesize(long)
+/* Reads socket number, writes it into *buffer into 'filename' file. */
 int receiveAndWriteFile(char *filename, int client, char *buffer, long filesize)
 {
 
@@ -350,7 +355,7 @@ int receiveAndWriteFile(char *filename, int client, char *buffer, long filesize)
 /*Performs register command and saves the reply in status*/
 void registerCommand(char *id, char *status)
 {
-    char *arg = getNextArg(id, ' ', -1);
+    char *arg = getNextArg(id, ' ', -1); // Check if 'id' stirng has only id written
 
     if (arg != NULL)
     {
@@ -472,6 +477,7 @@ int findQuestion(char *topicDir, char *question, char *fileName)
 }
 
 /*Searches a certain topic for an answer
+Writes answer's id to '*answerId'
 returns: 0 if answer is found, 1 otherwise
 */
 int findAnswerId(char *topicDir, char *answer, char *answerId)
@@ -665,7 +671,7 @@ void questionGetCommand(int client)
     bytesReaded = readFromTCP(client, topic, -1);
     if (bytesReaded > TOPIC_SIZE + 1 || topic[bytesReaded - 1] != ' ')
     {
-        // Reads rest of messgae before replying
+        // Reads rest of tcp stream before replying
         do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QGR ERR\n", client);
         return;
@@ -676,6 +682,10 @@ void questionGetCommand(int client)
     bytesReaded = readFromTCP(client, question, -1);
     if (bytesReaded > QUESTION_SIZE + 1 || question[bytesReaded - 1] != '\n')
     {
+
+        do
+            n = readFromTCP(client, question, -1);
+        while (n != 0);
         do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QGR ERR\n", client);
         return;
@@ -690,12 +700,14 @@ void questionGetCommand(int client)
     // Checks if question and topic are correct
     if (!isValidTopic(topic) || !isValidQuestion(question))
     {
+        // Reads rest of tcp stream before replying
         do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QGR ERR\n", client);
         return;
     }
     else if (testTopic[0] == '\0' || !findQuestion(dirName, question, testQuestion))
     {
+        // Reads rest of tcp stream before replying
         do n = readFromTCP(client, question, -1); while (n != 0);
         replyToTCP("QGR EOF\n", client);
         return;
@@ -1146,10 +1158,8 @@ void answerSubmitCommand(int client)
 
 void handleTCPCommand(int client, char *command)
 {
-    //   if (!strcmp(readBuffer, "GQU")) {
-    //      questionGetCommand(readBuffer, client);
-    //   }
-    /*   else*/ if (!strcmp(command, "QUS"))
+    
+    if (!strcmp(command, "QUS"))
     {
         questionSubmitCommand(client);
     }

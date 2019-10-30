@@ -768,7 +768,7 @@ void questionGetCommand(char *command, int flag) {
     int N, AN;
 
     /* Parses "QGR ID " */
-    if (readBytes(TCPfd, buffer, 6 + ID_SIZE) == 0) {
+    if (readBytes(TCPfd, buffer, 6 + ID_SIZE) <= 0) {
         printf("ERR\n");
         close(TCPfd);
         return;
@@ -833,7 +833,7 @@ void questionGetCommand(char *command, int flag) {
     printf("Question %s download\n", c + 1);
 
     /* Parses Number of answers */
-    if (readBytes(TCPfd, buffer, 4) == 0) {
+    if (readBytes(TCPfd, buffer, 4) <= 0) {
         printf("ERR\n");
         close(TCPfd);
         return;
@@ -842,8 +842,15 @@ void questionGetCommand(char *command, int flag) {
         if (buffer[2] != '\n' && readBytes(TCPfd, buffer, 2) != 0) {
             printf("ERR\n");
             close(TCPfd);
+            return;
         }
-        printf("Recieved question and available answers successfully\n");
+
+        /* Saves question as selected question */
+        strcpy(selectedQuestion, question);
+        qIsSet = 1;
+        
+        printf("Received question and available answers successfully\n");
+        
         return;
     }
     else {
@@ -863,7 +870,7 @@ void questionGetCommand(char *command, int flag) {
             }
 
             /* Gets the space */
-            if (readBytes(TCPfd, buffer, 2) == 0 || buffer[0] != ' ') {
+            if (readBytes(TCPfd, buffer, 2) <= 0 || buffer[0] != ' ') {
                 close(TCPfd);
                 printf("ERR\n");
                 return;
@@ -882,7 +889,7 @@ void questionGetCommand(char *command, int flag) {
     for (; N > 0; N--) {
 
         /* Gets answer number and ID */
-        if (readBytes(TCPfd, buffer, 2 + 1 + ID_SIZE + 1 + 1) == 0) {
+        if (readBytes(TCPfd, buffer, 2 + 1 + ID_SIZE + 1 + 1) <= 0) {
             close(TCPfd);
             printf("ERR\n");
             return;
@@ -925,7 +932,7 @@ void questionGetCommand(char *command, int flag) {
         printf("Answer number %d download\n", AN);
 
         /* Gets space or '\n' */
-        if (readBytes(TCPfd, buffer, 2) == 0) {
+        if (readBytes(TCPfd, buffer, 2) <= 0) {
             close(TCPfd);
             printf("ERR\n");
             return;
@@ -953,7 +960,7 @@ void questionGetCommand(char *command, int flag) {
     strcpy(selectedQuestion, question);
     qIsSet = 1;
 
-    printf("Recieved question and all available answers successfully\n");
+    printf("Received question and all available answers successfully\n");
 
     return;
 
@@ -1035,7 +1042,7 @@ void questionSubmitCommand(char *command) {
     }
 
     /* Recieves response */
-    if ((n = readBytes(TCPfd, buffer, BUFFER_SIZE + 1)) == 0) {
+    if ((n = readBytes(TCPfd, buffer, BUFFER_SIZE + 1)) <= 0) {
         printf("ERR\n");
         close(TCPfd);
         return;
@@ -1136,7 +1143,7 @@ void answerSubmitCommand(char *command) {
     }
 
     /* Recieves response */
-    if ((n = readBytes(TCPfd, buffer, BUFFER_SIZE + 1)) == 0) {
+    if ((n = readBytes(TCPfd, buffer, BUFFER_SIZE + 1)) <= 0) {
         printf("ERR\n");
         close(TCPfd);
         return;
@@ -1226,7 +1233,7 @@ int sendMessageUDP(char *message, int mBufferSize, char *response, int rBufferSi
     }
 
     /*
-    printf("Recieved %d bytes and response: \"%s\"\n", n - 1, response);
+    printf("Recreived %d bytes and response: \"%s\"\n", n - 1, response);
     */
 
     return n;
