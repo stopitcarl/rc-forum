@@ -273,7 +273,7 @@ int parseDataBlock(int fd, char *fn) {
     }
 
     /* Gets " IMG" */
-    if (readBytes(fd, buffer, 3) == 0) {
+    if (readBytes(fd, buffer, 3) <= 0) {
         return 1;
     }
     if (buffer[0] != ' ') {
@@ -292,7 +292,7 @@ int parseDataBlock(int fd, char *fn) {
     if (IMG) {
 
         /* Gets a space */
-        if (readBytes(fd, buffer, 2) == 0 && buffer[0] != ' ') {
+        if (readBytes(fd, buffer, 2) <= 0 || buffer[0] != ' ') {
             return 1;
         }
 
@@ -557,7 +557,8 @@ int readBytes(int fd, char *buffer, long size) {
             left -= n;
         }
         else {
-            printf("Server took to long to response\n");
+            printf("Server took to long to respond\n");
+            return -1;
         }
 
     } while (n > 0);
@@ -586,7 +587,7 @@ int readUntillSpace(int fd, char *buffer, long size) {
         if (read >= size) {
             return 1;
         }
-        if (readBytes(fd, c, 2) == 0) {
+        if (readBytes(fd, c, 2) <= 0) {
             return 1;
         }
         buffer[read] = c[0];
