@@ -55,7 +55,7 @@ void waitChild()
 int readFromTCP(int src, char *buffer, int nbytes)
 {
     fd_set fds;
-    struct timeval tv = {0, 10};
+    struct timeval tv = {0, 100000};
     int n, nread, nleft = nbytes;
 
     FD_ZERO(&fds);
@@ -79,12 +79,15 @@ int readFromTCP(int src, char *buffer, int nbytes)
     if (FD_ISSET(src, &fds)) {
         if (nbytes < 0) {
             while (1) {
-                nread += read(src, buffer + nread, 1);
 
-                if (nread == -1)
+                n = read(src, buffer + nread, 1);
+
+                if (n == -1)
                     error("Error reading byte-by-byte from tcp socket");
-                else if (nread == BUFFER_SIZE)
+                else if (n == BUFFER_SIZE)
                     return -1;
+
+                nread += n;
 
                 if (buffer[nread - 1] == ' ' || buffer[nread - 1] == '\n') {
                     nbytes = nread;
@@ -98,7 +101,7 @@ int readFromTCP(int src, char *buffer, int nbytes)
                 nread = read(src, buffer + nbytes - nleft, nleft);
                 nleft -= nread;
                 if (nread == 0)
-                    error("Broken pipe");
+                    error("Broken socket");
 
                 if (nread == -1)
                     error("Error reading from tcp socket");
