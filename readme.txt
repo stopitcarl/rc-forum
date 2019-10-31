@@ -1,5 +1,9 @@
-Todos os tópicos são guardados dentro da diretoria topics/ com o formato "{topic_name}-{author_id}/".
-Dentro de cada tópico as questões são guardadas com o formato "{question_name}-{author_id}.txt".
-Se a questão for acompanhada por uma imagem, esta é guardada na mesma diretoria que a questão com o formato "{question_name}-{author_id}.{extension}".
-As respostas às questões são guardadas na mesma diretoria que a questão com o formato "{question_name}_{answer_number}-{author_id}.txt".
-Se a resposta for acompanhada por uma imagem, esta é guardada na mesma diretoria que a resposta com o formato "{question_name}_{answer_number}-{author_id}.{extension}".
+# RC Forum
+A forum and client written in C. User can create new topics, ask questions inside each topic and answer them. User can also download the questions and answers. Both questions and answers are block of text that can be accompanied by an image. Server handles multiple connections and uses both udp and tcp protocols. All messages between server and client are unecrypted and can be read using software like Wireshark.
+
+All commands are described within project_guidelines.pdf
+
+
+
+
+
