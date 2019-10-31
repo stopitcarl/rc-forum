@@ -611,7 +611,7 @@ void questionListCommand(char *topic, char *response)
                 strstr(entry->d_name, ".txt") != NULL)
             {
                 int nAnswers = countAnswers(dirName, entry->d_name);
-                char answerString[2];
+                char answerString[3];
                 sprintf(answerString, "%d", nAnswers);
                 strcat(questions, " ");
                 fp = strchr(entry->d_name, '-');
