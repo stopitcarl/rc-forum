@@ -9,7 +9,7 @@ All messages between server and client are unecrypted and can be read using soft
 
 All commands are described within [project_guidelines.pdf](https://github.com/stopitcarl/rc-forum/blob/master/project_guideline.pdf).
 
-Both client's and server's way of storing and naming files is described within [file_structure.txt](https://github.com/stopitcarl/rc-forum/blob/master/file_structure.txt).
+Both client's and server's way of storing and naming files is described within [file_structure.txt](https://github.com/stopitcarl/rc-forum/blob/master/file_structure.txt) (in portuguese).
 
 
 
